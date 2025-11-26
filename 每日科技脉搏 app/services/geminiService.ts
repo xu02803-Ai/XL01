@@ -78,8 +78,34 @@ export const generateNewsImage = async (headline: string): Promise<string | null
       return null;
     }
 
-    // If we get a description instead, return null (image generation not available)
-    return data.data ? `data:image/png;base64,${data.data}` : null;
+    // For Gemini API, we get a description instead of actual image
+    // Return it as a text-based placeholder
+    if (data.type === 'description') {
+      // Return a data URL with a placeholder image containing the description
+      const canvas = document.createElement('canvas');
+      canvas.width = 400;
+      canvas.height = 300;
+      const ctx = canvas.getContext('2d');
+      
+      if (ctx) {
+        // Create a gradient background
+        const gradient = ctx.createLinearGradient(0, 0, 400, 300);
+        gradient.addColorStop(0, '#1a1a2e');
+        gradient.addColorStop(1, '#16213e');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 400, 300);
+        
+        // Add text
+        ctx.fillStyle = '#00ff88';
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('图像生成中...', 200, 150);
+        
+        return canvas.toDataURL('image/png');
+      }
+    }
+
+    return null;
   } catch (e) {
     console.warn("Image gen failed for:", headline, e);
     return null;

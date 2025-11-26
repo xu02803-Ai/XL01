@@ -24,49 +24,26 @@ export default async function handler(req: any, res: any) {
   try {
     const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
-    // Generate image
-    if (action === 'image' && headline) {
-      try {
-        const decodedHeadline = decodeURIComponent(headline);
-        const prompt = `Create a cyberpunk-style image for this news headline: "${decodedHeadline}". High tech, neon colors, futuristic design, no text.`;
-        
-        console.log("Generating image for:", decodedHeadline);
-        
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: [{
-            role: "user",
-            parts: [{ text: prompt }]
-          }]
-        } as any);
-
-        const content = response.candidates?.[0]?.content?.parts?.[0];
-        
-        if (content && "inlineData" in content) {
-          console.log("Image generated successfully");
-          return res.status(200).json({ 
-            success: true, 
-            data: content.inlineData.data,
-            mimeType: content.inlineData.mimeType
-          });
-        }
-        
-        console.warn("No image data in response");
-        return res.status(200).json({ success: false, error: "No image data" });
-      } catch (e: any) {
-        console.error("Image generation failed:", e);
-        return res.status(200).json({ success: false, error: e.message });
-      }
-    }
-
-    // Generate audio
+    // Generate audio with TTS
     if (action === 'audio' && text && voice) {
       try {
         const decodedText = decodeURIComponent(text);
-        const voiceStr = voice.toLowerCase() === 'male' ? 'Puck' : 'Kore';
         
-        console.log("Generating audio with voice:", voiceStr, "for text length:", decodedText.length);
+        // Map voice parameter to valid voice names
+        const voiceMap: { [key: string]: string } = {
+          'male': 'Puck',
+          'Male': 'Puck',
+          'MALE': 'Puck',
+          'female': 'Kore',
+          'Female': 'Kore',
+          'FEMALE': 'Kore'
+        };
         
+        const voiceName = voiceMap[voice] || 'Kore';
+        
+        console.log("Generating audio with voice:", voiceName, "Text length:", decodedText.length);
+        
+        // Use gemini-2.0-flash-001 with audio output
         const response = await ai.models.generateContent({
           model: 'gemini-2.0-flash',
           contents: [{
@@ -78,35 +55,83 @@ export default async function handler(req: any, res: any) {
             speechConfig: {
               voiceConfig: {
                 prebuiltVoiceConfig: {
-                  voiceName: voiceStr
+                  voiceName: voiceName
                 }
               }
             }
           }
         } as any);
 
-        const content = response.candidates?.[0]?.content?.parts?.[0];
+        const part = response.candidates?.[0]?.content?.parts?.[0];
         
-        if (content && "inlineData" in content) {
-          console.log("Audio generated successfully with voice:", voiceStr);
+        if (part && "inlineData" in part && part.inlineData) {
+          console.log("✓ Audio generated successfully with voice:", voiceName);
           return res.status(200).json({ 
             success: true, 
-            data: content.inlineData.data,
-            mimeType: content.inlineData.mimeType
+            data: part.inlineData.data,
+            mimeType: part.inlineData.mimeType || 'audio/mpeg'
           });
         }
         
-        console.warn("No audio data in response");
-        return res.status(200).json({ success: false, error: "No audio data" });
+        console.warn("✗ No audio data in response");
+        return res.status(200).json({ success: false, error: "No audio data generated" });
+        
       } catch (e: any) {
-        console.error("Audio generation failed:", e);
-        return res.status(200).json({ success: false, error: e.message });
+        console.error("✗ Audio generation error:", e.message);
+        return res.status(200).json({ 
+          success: false, 
+          error: `Audio failed: ${e.message}` 
+        });
       }
     }
 
-    res.status(400).json({ error: "Invalid action" });
+    // Generate image description (since Gemini API doesn't generate actual images)
+    if (action === 'image' && headline) {
+      try {
+        const decodedHeadline = decodeURIComponent(headline);
+        
+        console.log("Generating image for headline:", decodedHeadline);
+        
+        const prompt = `生成一个与以下新闻标题相关的图片描述。描述应该包含视觉元素、颜色、样式等。标题: "${decodedHeadline}"
+        
+        返回格式: 只返回一个自然的图片描述，不要包含任何其他文本。`;
+        
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.0-flash',
+          contents: [{
+            role: "user",
+            parts: [{ text: prompt }]
+          }]
+        });
+
+        const content = response.candidates?.[0]?.content?.parts?.[0];
+        
+        if (content && "text" in content) {
+          console.log("✓ Image description generated");
+          // Return a placeholder image or description
+          return res.status(200).json({ 
+            success: true, 
+            data: content.text,
+            type: 'description'
+          });
+        }
+        
+        console.warn("✗ No image description in response");
+        return res.status(200).json({ success: false, error: "No image description" });
+        
+      } catch (e: any) {
+        console.error("✗ Image generation error:", e.message);
+        return res.status(200).json({ 
+          success: false, 
+          error: `Image failed: ${e.message}` 
+        });
+      }
+    }
+
+    res.status(400).json({ error: "Invalid action or missing parameters" });
+    
   } catch (error: any) {
-    console.error("Media generation error:", error);
+    console.error("✗ Media handler error:", error.message);
     res.status(500).json({ error: error.message || "Internal server error" });
   }
 }
