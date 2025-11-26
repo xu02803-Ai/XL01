@@ -1,0 +1,18 @@
+{
+  "name": "TechPulse Daily | 每日科技脉搏",
+  "short_name": "TechPulse",
+  "description": "AI-curated daily technology news briefing.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "https://upload.wikimedia.org/wikipedia/commons/8/8a/Google_Gemini_logo.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "name": "TechPulse Daily (每日科技脉搏)",
+  "description": "Your AI-curated daily technology news briefing, powered by Gemini 2.5 Flash and Google Search Grounding for real-time accuracy.",
+  "requestFramePermissions": []
+}
