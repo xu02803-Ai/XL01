@@ -3,7 +3,6 @@
   "installCommand": "cd '每日科技脉搏 app' && npm install",
   "outputDirectory": "每日科技脉搏 app/dist",
   "framework": "vite",
-  "root": "每日科技脉搏 app",
   "functions": {
     "api/**/*.ts": {
       "runtime": "nodejs20.x"
