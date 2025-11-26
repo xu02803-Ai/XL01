@@ -2,5 +2,10 @@
   "buildCommand": "cd '每日科技脉搏 app' && npm run build",
   "installCommand": "cd '每日科技脉搏 app' && npm install",
   "outputDirectory": "每日科技脉搏 app/dist",
-  "framework": "vite"
+  "framework": "vite",
+  "root": "每日科技脉搏 app",
+  "env": {
+    "GEMINI_API_KEY": "@gemini_api_key",
+    "API_KEY": "@gemini_api_key"
+  }
 }
