@@ -22,7 +22,7 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
   const { today, yesterday } = getDateContext();
   
   try {
-    const response = await fetch('/api/news?dateStr=' + encodeURIComponent(dateStr), {
+    const response = await fetch('/api/generate-content?dateStr=' + encodeURIComponent(dateStr), {
       method: 'GET'
     });
 
@@ -63,7 +63,7 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
 
 export const generateNewsImage = async (headline: string): Promise<string | null> => {
   try {
-    const response = await fetch(`/api/media?action=image&headline=${encodeURIComponent(headline)}`, {
+    const response = await fetch(`/api/generate-image?headline=${encodeURIComponent(headline)}`, {
       method: 'GET'
     });
 
@@ -97,7 +97,7 @@ export const generateNewsAudio = async (text: string, voice: 'Male' | 'Female'):
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(`/api/media?action=audio&text=${encodeURIComponent(text)}&voice=${voice}`, {
+      const response = await fetch(`/api/synthesize-speech?text=${encodeURIComponent(text)}&voice=${voice}`, {
         method: 'GET'
       });
 
@@ -137,10 +137,9 @@ export const generateNewsAudio = async (text: string, voice: 'Male' | 'Female'):
   return null;
 };
 
-
 // --- Chatbot ---
 
 export const askFollowUpQuestion = async (newsContext: NewsItem[], question: string): Promise<string> => {
-  // Placeholder: implement if needed
-  return "此功能暂未实现";
+  // Placeholder implementation
+  return "此功能暂未实现。";
 };
