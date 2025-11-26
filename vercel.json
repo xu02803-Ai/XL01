@@ -1,0 +1,6 @@
+{
+  "buildCommand": "cd '每日科技脉搏 app' && npm run build",
+  "installCommand": "cd '每日科技脉搏 app' && npm install",
+  "outputDirectory": "每日科技脉搏 app/dist",
+  "framework": "vite"
+}
