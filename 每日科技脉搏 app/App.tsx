@@ -78,15 +78,18 @@ const App: React.FC = () => {
     setBriefingData(null);
     
     try {
+      console.log("🚀 Starting news generation...");
       const data = await fetchDailyTechNews(today);
       if (!data.news || data.news.length === 0) {
         throw new Error("No news items found. Please try again.");
       }
+      console.log("✅ News generation successful, items:", data.news.length);
       setBriefingData(data);
       setAppState(AppState.SUCCESS);
     } catch (err: any) {
+      console.error("❌ News generation failed:", err);
       setAppState(AppState.ERROR);
-      setErrorMsg(err.message || "Failed to fetch news.");
+      setErrorMsg(err.message || "Failed to fetch news. Check browser console for details.");
     }
   };
 

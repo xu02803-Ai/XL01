@@ -22,21 +22,29 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
   const { today, yesterday } = getDateContext();
   
   try {
+    console.log("🔄 Fetching news from /api/generate-content...");
     const response = await fetch('/api/generate-content?dateStr=' + encodeURIComponent(dateStr), {
       method: 'GET'
     });
 
+    console.log("📨 API Response Status:", response.status);
+    
     if (!response.ok) {
-      throw new Error(`API Error: ${response.status}`);
+      const errorText = await response.text();
+      console.error("❌ API Error Response:", errorText);
+      throw new Error(`API Error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log("📦 Parsed Response:", data);
     
     if (!data.success) {
+      console.error("❌ API returned success=false:", data.error);
       throw new Error(data.error || "Failed to fetch news");
     }
 
     let jsonString = data.data || "[]";
+    console.log("🔍 JSON String (first 200 chars):", jsonString.substring(0, 200));
     
     // Clean up potential markdown formatting
     if (jsonString.includes("```json")) {
@@ -46,6 +54,7 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
     }
     
     const newsItems = JSON.parse(jsonString.trim()) as NewsItem[];
+    console.log("✅ Successfully parsed news items:", newsItems.length);
 
     return {
       news: newsItems,
@@ -54,8 +63,8 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
     };
 
   } catch (error) {
-    console.error("Error fetching news:", error);
-    throw new Error("Failed to generate valid news data. Please try again.");
+    console.error("❌ Error fetching news:", error);
+    throw error;
   }
 };
 
