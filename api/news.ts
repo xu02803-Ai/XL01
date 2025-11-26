@@ -1,9 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ 
-  apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY 
-});
-
 const getDateContext = () => {
   const now = new Date();
   const today = now.toISOString().split('T')[0];
@@ -32,6 +28,17 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
+    // Check if API key is set
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    if (!apiKey) {
+      console.error("GEMINI_API_KEY not set in environment variables");
+      return res.status(500).json({ 
+        success: false,
+        error: "API key not configured. Please set GEMINI_API_KEY environment variable." 
+      });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     const modelId = "gemini-2.5-flash";
     const { today, yesterday } = getDateContext();
 
@@ -70,6 +77,8 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
 ]
 `;
 
+    console.log("Calling Gemini API with model:", modelId);
+    
     const response = await ai.models.generateContent({
       model: modelId,
       contents: [{
@@ -84,6 +93,7 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
     const content = response.candidates?.[0]?.content?.parts?.[0];
     
     if (!content || !("text" in content)) {
+      console.error("No text content in response:", response);
       return res.status(500).json({ error: "No text response from API" });
     }
 
@@ -93,7 +103,15 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
     jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
     
     // Validate JSON
-    JSON.parse(jsonString);
+    try {
+      JSON.parse(jsonString);
+    } catch (e) {
+      console.error("Invalid JSON in response:", jsonString.substring(0, 200));
+      return res.status(500).json({ 
+        success: false,
+        error: "Invalid JSON response from API" 
+      });
+    }
     
     res.status(200).json({ success: true, data: jsonString });
   } catch (error: any) {
