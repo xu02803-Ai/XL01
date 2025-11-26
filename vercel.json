@@ -4,6 +4,21 @@
   "outputDirectory": "每日科技脉搏 app/dist",
   "framework": "vite",
   "root": "每日科技脉搏 app",
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
   "env": {
     "GEMINI_API_KEY": "@gemini_api_key",
     "API_KEY": "@gemini_api_key"
