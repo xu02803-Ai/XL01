@@ -24,7 +24,46 @@ export default async function handler(req: any, res: any) {
   try {
     const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
-    // Generate audio with TTS
+    // Generate image with gemini-2.5-flash-image
+    if (action === 'image' && headline) {
+      try {
+        const decodedHeadline = decodeURIComponent(headline);
+        const prompt = `Create a cyberpunk-style image for this tech news headline: "${decodedHeadline}". High tech, neon colors, futuristic design, no text.`;
+        
+        console.log("Generating image with gemini-2.5-flash-image for:", decodedHeadline);
+        
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: [{
+            role: "user",
+            parts: [{ text: prompt }]
+          }]
+        } as any);
+
+        const part = response.candidates?.[0]?.content?.parts?.[0];
+        
+        if (part && "inlineData" in part && part.inlineData) {
+          console.log("✓ Image generated successfully");
+          return res.status(200).json({ 
+            success: true, 
+            data: part.inlineData.data,
+            mimeType: part.inlineData.mimeType || 'image/png'
+          });
+        }
+        
+        console.warn("✗ No image data in response");
+        return res.status(200).json({ success: false, error: "No image data generated" });
+        
+      } catch (e: any) {
+        console.error("✗ Image generation error:", e.message);
+        return res.status(200).json({ 
+          success: false, 
+          error: `Image failed: ${e.message}` 
+        });
+      }
+    }
+
+    // Generate audio with gemini-2.5-flash-preview-tts
     if (action === 'audio' && text && voice) {
       try {
         const decodedText = decodeURIComponent(text);
@@ -41,11 +80,10 @@ export default async function handler(req: any, res: any) {
         
         const voiceName = voiceMap[voice] || 'Kore';
         
-        console.log("Generating audio with voice:", voiceName, "Text length:", decodedText.length);
+        console.log("Generating audio with gemini-2.5-flash-preview-tts, voice:", voiceName, "Text length:", decodedText.length);
         
-        // Use gemini-2.0-flash-001 with audio output
         const response = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
+          model: 'gemini-2.5-flash-preview-tts',
           contents: [{
             role: "user",
             parts: [{ text: decodedText }]
@@ -81,49 +119,6 @@ export default async function handler(req: any, res: any) {
         return res.status(200).json({ 
           success: false, 
           error: `Audio failed: ${e.message}` 
-        });
-      }
-    }
-
-    // Generate image description (since Gemini API doesn't generate actual images)
-    if (action === 'image' && headline) {
-      try {
-        const decodedHeadline = decodeURIComponent(headline);
-        
-        console.log("Generating image for headline:", decodedHeadline);
-        
-        const prompt = `生成一个与以下新闻标题相关的图片描述。描述应该包含视觉元素、颜色、样式等。标题: "${decodedHeadline}"
-        
-        返回格式: 只返回一个自然的图片描述，不要包含任何其他文本。`;
-        
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: [{
-            role: "user",
-            parts: [{ text: prompt }]
-          }]
-        });
-
-        const content = response.candidates?.[0]?.content?.parts?.[0];
-        
-        if (content && "text" in content) {
-          console.log("✓ Image description generated");
-          // Return a placeholder image or description
-          return res.status(200).json({ 
-            success: true, 
-            data: content.text,
-            type: 'description'
-          });
-        }
-        
-        console.warn("✗ No image description in response");
-        return res.status(200).json({ success: false, error: "No image description" });
-        
-      } catch (e: any) {
-        console.error("✗ Image generation error:", e.message);
-        return res.status(200).json({ 
-          success: false, 
-          error: `Image failed: ${e.message}` 
         });
       }
     }

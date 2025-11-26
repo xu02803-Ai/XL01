@@ -39,7 +39,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const modelId = "gemini-2.5-flash";
+    const modelId = "gemini-3-pro-preview";
     const { today, yesterday } = getDateContext();
 
     const prompt = `
