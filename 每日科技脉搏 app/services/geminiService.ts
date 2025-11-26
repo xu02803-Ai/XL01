@@ -72,9 +72,16 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
 
 export const generateNewsImage = async (headline: string): Promise<string | null> => {
   try {
+    console.log("🖼️ Requesting image for:", headline);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+    
     const response = await fetch(`/api/generate-image?headline=${encodeURIComponent(headline)}`, {
-      method: 'GET'
+      method: 'GET',
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       console.warn("Image API error:", response.status);
@@ -89,12 +96,17 @@ export const generateNewsImage = async (headline: string): Promise<string | null
 
     // Convert base64 to data URL for display
     if (data.data && data.mimeType) {
+      console.log("✅ Image received successfully");
       return `data:${data.mimeType};base64,${data.data}`;
     }
 
     return null;
-  } catch (e) {
-    console.warn("Image gen failed for:", headline, e);
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      console.warn("Image generation timeout for:", headline);
+    } else {
+      console.warn("Image gen failed for:", headline, e);
+    }
     return null;
   }
 };

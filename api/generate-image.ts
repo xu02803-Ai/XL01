@@ -36,16 +36,23 @@ export default async function handler(req: any, res: any) {
     
     const prompt = `Create a cyberpunk-style image for this tech news headline: "${decodedHeadline}". High tech, neon colors, futuristic design, no text.`;
     
-    console.log("🖼️ Generating image with gemini-2.5-flash-image for:", decodedHeadline);
+    console.log("🖼️ Generating image with gemini-2.5-flash for:", decodedHeadline);
     
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+    // Set timeout for image generation (15 seconds)
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("Image generation timeout after 15 seconds")), 15000)
+    );
+    
+    const generationPromise = ai.models.generateContent({
+      model: 'gemini-2.5-flash',
       contents: [{
         role: "user",
         parts: [{ text: prompt }]
       }]
     } as any);
 
+    const response = await Promise.race([generationPromise, timeoutPromise]) as any;
+    
     const part = response.candidates?.[0]?.content?.parts?.[0];
     
     if (part && "inlineData" in part && part.inlineData) {
