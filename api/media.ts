@@ -27,10 +27,13 @@ export default async function handler(req: any, res: any) {
     // Generate image
     if (action === 'image' && headline) {
       try {
-        const prompt = `Cyberpunk concept art: "${decodeURIComponent(headline)}". High tech, neon, cinematic lighting. No text.`;
+        const decodedHeadline = decodeURIComponent(headline);
+        const prompt = `Create a cyberpunk-style image for this news headline: "${decodedHeadline}". High tech, neon colors, futuristic design, no text.`;
+        
+        console.log("Generating image for:", decodedHeadline);
         
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-preview',
+          model: 'gemini-2.0-flash',
           contents: [{
             role: "user",
             parts: [{ text: prompt }]
@@ -38,43 +41,66 @@ export default async function handler(req: any, res: any) {
         } as any);
 
         const content = response.candidates?.[0]?.content?.parts?.[0];
-        if (content && "text" in content) {
-          return res.status(200).json({ success: true, data: content.text });
+        
+        if (content && "inlineData" in content) {
+          console.log("Image generated successfully");
+          return res.status(200).json({ 
+            success: true, 
+            data: content.inlineData.data,
+            mimeType: content.inlineData.mimeType
+          });
         }
-        return res.status(500).json({ error: "No image response" });
+        
+        console.warn("No image data in response");
+        return res.status(200).json({ success: false, error: "No image data" });
       } catch (e: any) {
         console.error("Image generation failed:", e);
-        return res.status(500).json({ success: false, error: e.message });
+        return res.status(200).json({ success: false, error: e.message });
       }
     }
 
     // Generate audio
     if (action === 'audio' && text && voice) {
       try {
-        const voiceName = voice === 'Male' ? 'Puck' : 'Kore';
         const decodedText = decodeURIComponent(text);
+        const voiceStr = voice.toLowerCase() === 'male' ? 'Puck' : 'Kore';
+        
+        console.log("Generating audio with voice:", voiceStr, "for text length:", decodedText.length);
         
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-preview',
+          model: 'gemini-2.0-flash',
           contents: [{
             role: "user",
-            parts: [{ text: `Generate audio in ${voiceName} voice for: ${decodedText}` }]
-          }]
+            parts: [{ text: decodedText }]
+          }],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName: voiceStr
+                }
+              }
+            }
+          }
         } as any);
 
         const content = response.candidates?.[0]?.content?.parts?.[0];
+        
         if (content && "inlineData" in content) {
-          const audioData = content.inlineData;
+          console.log("Audio generated successfully with voice:", voiceStr);
           return res.status(200).json({ 
             success: true, 
-            data: audioData.data,
-            mimeType: audioData.mimeType
+            data: content.inlineData.data,
+            mimeType: content.inlineData.mimeType
           });
         }
-        return res.status(500).json({ error: "No audio response" });
+        
+        console.warn("No audio data in response");
+        return res.status(200).json({ success: false, error: "No audio data" });
       } catch (e: any) {
         console.error("Audio generation failed:", e);
-        return res.status(500).json({ success: false, error: e.message });
+        return res.status(200).json({ success: false, error: e.message });
       }
     }
 
