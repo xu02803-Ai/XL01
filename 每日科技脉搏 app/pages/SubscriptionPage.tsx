@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 
 interface Plan {
   id: string;
@@ -10,16 +9,18 @@ interface Plan {
   stripe_price_id: string | null;
 }
 
-const SubscriptionPage: React.FC = () => {
+interface SubscriptionPageProps {
+  onNavigate?: (page: 'main' | 'profile') => void;
+}
+
+const SubscriptionPage: React.FC<SubscriptionPageProps> = ({ onNavigate }) => {
   const { user, subscription, token, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      navigate('/login');
       return;
     }
 

@@ -1,32 +1,44 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 
 const LoginPage: React.FC = () => {
-  const { login } = useAuth();
-  const navigate = useNavigate();
+  const { login, register } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isLogin, setIsLogin] = useState(true);
-  const [username, setUsername] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setLoading(true);
 
     try {
       if (isLogin) {
         await login(email, password);
+        // AuthContext will handle redirect
       } else {
-        // Register logic would go here
-        setError('Registration page coming soon');
+        // Register
+        if (!username.trim()) {
+          setError('Username is required');
+          setLoading(false);
+          return;
+        }
+        if (password.length < 8) {
+          setError('Password must be at least 8 characters');
+          setLoading(false);
+          return;
+        }
+        await register(email, password, username);
+        setSuccessMsg('Account created! Redirecting...');
+        // AuthContext will handle redirect
       }
-      navigate('/');
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'An error occurred');
     } finally {
       setLoading(false);
     }
@@ -95,6 +107,12 @@ const LoginPage: React.FC = () => {
             {error && (
               <div className="p-3 rounded-lg bg-red-500/20 border border-red-500/50 text-red-200 text-sm">
                 {error}
+              </div>
+            )}
+
+            {successMsg && (
+              <div className="p-3 rounded-lg bg-green-500/20 border border-green-500/50 text-green-200 text-sm">
+                {successMsg}
               </div>
             )}
 

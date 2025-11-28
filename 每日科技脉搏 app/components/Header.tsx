@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { ViewMode, Theme } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface HeaderProps {
   viewMode: ViewMode;
@@ -8,9 +9,12 @@ interface HeaderProps {
   savedCount: number;
   theme: Theme;
   onToggleTheme: () => void;
+  onNavigate?: (page: 'main' | 'profile' | 'subscription') => void;
+  currentPlan?: string;
 }
 
-const Header: React.FC<HeaderProps> = ({ viewMode, onViewChange, savedCount, theme, onToggleTheme }) => {
+const Header: React.FC<HeaderProps> = ({ viewMode, onViewChange, savedCount, theme, onToggleTheme, onNavigate, currentPlan }) => {
+  const { user, subscription, logout } = useAuth();
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 dark:border-dark-border bg-white/80 dark:bg-dark-bg/80 backdrop-blur-md transition-colors duration-300">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
@@ -96,6 +100,35 @@ const Header: React.FC<HeaderProps> = ({ viewMode, onViewChange, savedCount, the
           </div>
 
           <div className="h-6 w-px bg-slate-200 dark:bg-dark-border hidden sm:block"></div>
+
+          {/* User Menu */}
+          {user && (
+            <div className="flex items-center gap-3 hidden sm:flex">
+              <div className="flex flex-col items-end">
+                <div className="text-sm font-medium text-slate-900 dark:text-white">{user.username || user.email}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 capitalize">{subscription?.plan || 'free'} plan</div>
+              </div>
+              <button
+                onClick={() => onNavigate?.('profile')}
+                className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white font-semibold hover:shadow-lg transition-shadow"
+                title="Profile"
+              >
+                {user.username?.[0] || user.email[0]}
+              </button>
+              <button
+                onClick={() => onNavigate?.('subscription')}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Upgrade
+              </button>
+              <button
+                onClick={logout}
+                className="px-3 py-1.5 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10 text-sm font-medium rounded-lg transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          )}
 
            <a 
             href="mailto:feedback@techpulse.ai?subject=TechPulse%20Feedback"

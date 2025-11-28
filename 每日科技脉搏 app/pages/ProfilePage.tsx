@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
 
-const ProfilePage: React.FC = () => {
+interface ProfilePageProps {
+  onNavigate?: (page: 'main' | 'subscription') => void;
+}
+
+const ProfilePage: React.FC<ProfilePageProps> = ({ onNavigate }) => {
   const { user, subscription, logout, updateProfile, isAuthenticated } = useAuth();
-  const navigate = useNavigate();
   const [username, setUsername] = useState(user?.username || '');
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '');
   const [saving, setSaving] = useState(false);
@@ -12,9 +14,19 @@ const ProfilePage: React.FC = () => {
   const [success, setSuccess] = useState('');
 
   if (!isAuthenticated) {
-    navigate('/login');
-    return null;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-white text-xl mb-4">Please log in to access your profile.</p>
+        </div>
+      </div>
+    );
   }
+
+  const handleLogout = () => {
+    logout();
+    // Redirect to login will be handled by AppRouter
+  };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();

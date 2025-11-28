@@ -4,6 +4,15 @@ import { DailyBriefingData, NewsItem } from "../types";
 // --- Helper: Sleep ---
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// --- Helper: Get Auth Token ---
+const getAuthToken = (): string => {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('auth_token');
+    return token || '';
+  }
+  return '';
+};
+
 // --- Helper: Get Date Strings ---
 const getDateContext = () => {
   const now = new Date();
@@ -20,11 +29,15 @@ const getDateContext = () => {
 
 export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefingData> => {
   const { today, yesterday } = getDateContext();
+  const token = getAuthToken();
   
   try {
     console.log("🔄 Fetching news from /api/generate-content...");
     const response = await fetch('/api/generate-content?dateStr=' + encodeURIComponent(dateStr), {
-      method: 'GET'
+      method: 'GET',
+      headers: token ? {
+        'Authorization': `Bearer ${token}`,
+      } : {},
     });
 
     console.log("📨 API Response Status:", response.status);
@@ -73,12 +86,16 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
 export const generateNewsImage = async (headline: string): Promise<string | null> => {
   try {
     console.log("🖼️ Requesting image for:", headline);
+    const token = getAuthToken();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
     const response = await fetch(`/api/generate-image?headline=${encodeURIComponent(headline)}`, {
       method: 'GET',
-      signal: controller.signal
+      signal: controller.signal,
+      headers: token ? {
+        'Authorization': `Bearer ${token}`,
+      } : {},
     });
 
     clearTimeout(timeoutId);
@@ -122,11 +139,15 @@ export const generateNewsImage = async (headline: string): Promise<string | null
 
 export const generateNewsAudio = async (text: string, voice: 'Male' | 'Female'): Promise<ArrayBuffer | null> => {
   const MAX_RETRIES = 3;
+  const token = getAuthToken();
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const response = await fetch(`/api/synthesize-speech?text=${encodeURIComponent(text)}&voice=${voice}`, {
-        method: 'GET'
+        method: 'GET',
+        headers: token ? {
+          'Authorization': `Bearer ${token}`,
+        } : {},
       });
 
       if (!response.ok) {
