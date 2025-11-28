@@ -4,16 +4,14 @@ import * as jwt from 'jsonwebtoken';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-const jwtSecret = process.env.JWT_SECRET;
+const jwtSecret = process.env.JWT_SECRET || 'default-jwt-secret-change-in-production';
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('❌ Missing Supabase configuration:', {
-    SUPABASE_URL: !!supabaseUrl,
-    SUPABASE_SERVICE_KEY: !!supabaseServiceKey,
-  });
+let supabase: any = null;
+
+// Initialize Supabase only if credentials are available
+if (supabaseUrl && supabaseServiceKey) {
+  supabase = createClient(supabaseUrl, supabaseServiceKey);
 }
-
-const supabase = createClient(supabaseUrl || '', supabaseServiceKey || '');
 
 interface RegisterBody {
   email: string;
@@ -38,14 +36,14 @@ export default async function handler(req: any, res: any) {
   }
 
   // Check environment variables
-  if (!supabaseUrl || !supabaseServiceKey || !jwtSecret) {
+  if (!supabaseUrl || !supabaseServiceKey) {
     console.error('❌ Missing environment variables:', {
       SUPABASE_URL: !!supabaseUrl,
       SUPABASE_SERVICE_KEY: !!supabaseServiceKey,
       JWT_SECRET: !!jwtSecret,
     });
     return res.status(500).json({ 
-      error: 'Server configuration error: Missing environment variables'
+      error: 'Server configuration error: Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables in Vercel.'
     });
   }
 
@@ -57,6 +55,14 @@ export default async function handler(req: any, res: any) {
 
   if (req.method === 'POST' && action === 'login') {
     return handleLogin(req, res);
+  }
+
+  if (req.method === 'GET') {
+    return res.status(200).json({ 
+      success: true,
+      message: 'Auth API is running',
+      configured: !!(supabaseUrl && supabaseServiceKey)
+    });
   }
 
   res.status(400).json({ error: 'Invalid request' });
