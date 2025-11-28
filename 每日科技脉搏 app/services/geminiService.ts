@@ -74,7 +74,7 @@ export const generateNewsImage = async (headline: string): Promise<string | null
   try {
     console.log("🖼️ Requesting image for:", headline);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
     const response = await fetch(`/api/generate-image?headline=${encodeURIComponent(headline)}`, {
       method: 'GET',
@@ -94,6 +94,13 @@ export const generateNewsImage = async (headline: string): Promise<string | null
       return null;
     }
 
+    // Handle both base64 and direct URL responses
+    if (data.isUrl) {
+      // Direct URL from API (e.g., from Unsplash)
+      console.log("✅ Image URL received");
+      return data.data; // Return URL directly
+    }
+    
     // Convert base64 to data URL for display
     if (data.data && data.mimeType) {
       console.log("✅ Image received successfully");
