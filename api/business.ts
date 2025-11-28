@@ -56,6 +56,11 @@ export default async function handler(req: any, res: any) {
     });
   }
 
+  // Public endpoint: validate coupon
+  if (req.method === 'POST' && action === 'validate-coupon') {
+    return validateCoupon(req.body, res);
+  }
+
   // Protected endpoints
   const token = getToken(req);
   if (!token) {
@@ -71,7 +76,7 @@ export default async function handler(req: any, res: any) {
     return createCheckoutSession(user, req.body, res);
   }
 
-  if (req.method === 'POST' && action === 'cancel') {
+  if (req.method === 'POST' && action === 'cancel-subscription') {
     return cancelSubscription(user, res);
   }
 
@@ -79,8 +84,14 @@ export default async function handler(req: any, res: any) {
     return upgradeSubscription(user, req.body, res);
   }
 
+  if (req.method === 'POST' && action === 'apply-coupon') {
+    return applyCoupon(user, req.body, res);
+  }
+
   res.status(400).json({ error: 'Invalid request' });
 }
+
+// SUBSCRIPTION HANDLERS
 
 async function createCheckoutSession(user: any, body: any, res: any) {
   try {
@@ -238,6 +249,136 @@ async function upgradeSubscription(user: any, body: any, res: any) {
       message: `Upgraded to ${planConfig.name} plan`,
     });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+// COUPON HANDLERS
+
+async function validateCoupon(body: any, res: any) {
+  try {
+    const { code } = body;
+    
+    if (!code) {
+      return res.status(400).json({ error: 'Coupon code required' });
+    }
+
+    const { data: coupon, error } = await supabase
+      .from('coupons')
+      .select('*')
+      .eq('code', code.toUpperCase())
+      .limit(1);
+
+    if (error || !coupon || coupon.length === 0) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+
+    const couponData = coupon[0];
+
+    // Check if valid
+    if (!couponData.is_active) {
+      return res.status(400).json({ error: 'Coupon is inactive' });
+    }
+
+    if (couponData.expires_at && new Date(couponData.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Coupon has expired' });
+    }
+
+    if (couponData.usage_limit && couponData.times_used >= couponData.usage_limit) {
+      return res.status(400).json({ error: 'Coupon usage limit reached' });
+    }
+
+    res.status(200).json({
+      success: true,
+      coupon: {
+        code: couponData.code,
+        discount_type: couponData.discount_type,
+        discount_value: couponData.discount_value,
+        description: couponData.description,
+      },
+    });
+  } catch (error: any) {
+    console.error('Coupon validation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+}
+
+async function applyCoupon(user: any, body: any, res: any) {
+  try {
+    const { code, subscription_id } = body;
+
+    if (!code || !subscription_id) {
+      return res.status(400).json({ error: 'Code and subscription_id required' });
+    }
+
+    // Get coupon
+    const { data: coupons, error: couponError } = await supabase
+      .from('coupons')
+      .select('*')
+      .eq('code', code.toUpperCase())
+      .limit(1);
+
+    if (couponError || !coupons || coupons.length === 0) {
+      return res.status(404).json({ error: 'Coupon not found' });
+    }
+
+    const coupon = coupons[0];
+
+    // Validate coupon
+    if (!coupon.is_active) {
+      return res.status(400).json({ error: 'Coupon is inactive' });
+    }
+
+    if (coupon.expires_at && new Date(coupon.expires_at) < new Date()) {
+      return res.status(400).json({ error: 'Coupon has expired' });
+    }
+
+    if (coupon.usage_limit && coupon.times_used >= coupon.usage_limit) {
+      return res.status(400).json({ error: 'Coupon usage limit reached' });
+    }
+
+    // Check if user already used this coupon
+    const { data: usage } = await supabase
+      .from('coupon_usage')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('coupon_id', coupon.id)
+      .limit(1);
+
+    if (usage && usage.length > 0) {
+      return res.status(400).json({ error: 'You have already used this coupon' });
+    }
+
+    // Apply coupon
+    const { error: applyError } = await supabase
+      .from('coupon_usage')
+      .insert({
+        user_id: user.id,
+        coupon_id: coupon.id,
+        subscription_id,
+      });
+
+    if (applyError) {
+      return res.status(500).json({ error: 'Failed to apply coupon' });
+    }
+
+    // Increment usage count
+    await supabase
+      .from('coupons')
+      .update({ times_used: coupon.times_used + 1 })
+      .eq('id', coupon.id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Coupon applied successfully',
+      coupon: {
+        code: coupon.code,
+        discount_type: coupon.discount_type,
+        discount_value: coupon.discount_value,
+      },
+    });
+  } catch (error: any) {
+    console.error('Apply coupon error:', error);
     res.status(500).json({ error: error.message });
   }
 }
