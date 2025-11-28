@@ -45,31 +45,43 @@ export default async function handler(req: any, res: any) {
 
 async function handleRegister(req: any, res: any) {
   try {
+    console.log('🔐 Register request received');
     const { email, username, password } = req.body as RegisterBody;
 
     // Validation
     if (!email || !username || !password) {
+      console.warn('❌ Missing required fields:', { email: !!email, username: !!username, password: !!password });
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
     if (password.length < 8) {
+      console.warn('❌ Password too short');
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
+    console.log('📋 Checking for existing user:', email);
     // Check if user exists
-    const { data: existingUser } = await supabase
+    const { data: existingUser, error: checkError } = await supabase
       .from('users')
       .select('id')
       .or(`email.eq.${email},username.eq.${username}`)
       .limit(1);
 
+    if (checkError) {
+      console.error('❌ Database error checking user:', checkError);
+      return res.status(500).json({ error: 'Database error: ' + checkError.message });
+    }
+
     if (existingUser && existingUser.length > 0) {
+      console.warn('❌ User already exists:', email);
       return res.status(400).json({ error: 'User already exists' });
     }
 
+    console.log('🔒 Hashing password');
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10);
 
+    console.log('👤 Creating user in database');
     // Create user
     const { data: newUser, error } = await supabase
       .from('users')
@@ -83,14 +95,16 @@ async function handleRegister(req: any, res: any) {
       .select();
 
     if (error || !newUser || newUser.length === 0) {
-      console.error('Registration error:', error);
-      return res.status(500).json({ error: 'Failed to create user' });
+      console.error('❌ Registration error:', error);
+      return res.status(500).json({ error: error?.message || 'Failed to create user' });
     }
 
     const user = newUser[0];
+    console.log('✅ User created:', user.id);
 
+    console.log('📦 Creating free subscription');
     // Create free subscription
-    await supabase.from('subscriptions').insert([
+    const { error: subError } = await supabase.from('subscriptions').insert([
       {
         user_id: user.id,
         plan: 'free',
@@ -98,6 +112,12 @@ async function handleRegister(req: any, res: any) {
       },
     ]);
 
+    if (subError) {
+      console.error('⚠️ Subscription creation error:', subError);
+      // Don't fail registration if subscription fails
+    }
+
+    console.log('🔑 Generating JWT token');
     // Generate JWT token
     const token = jwt.sign(
       { id: user.id, email: user.email },
@@ -105,6 +125,7 @@ async function handleRegister(req: any, res: any) {
       { expiresIn: '30d' }
     );
 
+    console.log('✅ Registration successful');
     res.status(201).json({
       success: true,
       user: {
@@ -115,19 +136,22 @@ async function handleRegister(req: any, res: any) {
       token,
     });
   } catch (error: any) {
-    console.error('Registration error:', error);
+    console.error('❌ Registration error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 }
 
 async function handleLogin(req: any, res: any) {
   try {
+    console.log('🔐 Login request received');
     const { email, password } = req.body as LoginBody;
 
     if (!email || !password) {
+      console.warn('❌ Missing email or password');
       return res.status(400).json({ error: 'Missing email or password' });
     }
 
+    console.log('🔍 Looking up user:', email);
     // Get user
     const { data: users, error } = await supabase
       .from('users')
@@ -136,17 +160,24 @@ async function handleLogin(req: any, res: any) {
       .limit(1);
 
     if (error || !users || users.length === 0) {
+      console.warn('❌ User not found or database error:', error?.message);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     const user = users[0];
+    console.log('✅ User found:', user.id);
 
+    console.log('🔑 Verifying password');
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password_hash);
     if (!passwordMatch) {
+      console.warn('❌ Password mismatch for user:', email);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    console.log('✅ Password verified');
+
+    console.log('🎫 Generating JWT token');
     // Generate JWT token
     const token = jwt.sign(
       { id: user.id, email: user.email },
@@ -154,6 +185,7 @@ async function handleLogin(req: any, res: any) {
       { expiresIn: '30d' }
     );
 
+    console.log('📦 Fetching subscription info');
     // Get subscription info
     const { data: subscription } = await supabase
       .from('subscriptions')
@@ -161,6 +193,7 @@ async function handleLogin(req: any, res: any) {
       .eq('user_id', user.id)
       .limit(1);
 
+    console.log('✅ Login successful');
     res.status(200).json({
       success: true,
       user: {
@@ -173,7 +206,7 @@ async function handleLogin(req: any, res: any) {
       token,
     });
   } catch (error: any) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
     res.status(500).json({ error: error.message || 'Internal server error' });
   }
 }

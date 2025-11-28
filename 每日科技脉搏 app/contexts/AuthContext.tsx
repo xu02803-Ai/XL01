@@ -56,12 +56,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ email, password }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Login failed');
+      const responseText = await response.text();
+      console.log('Login response status:', response.status);
+      console.log('Login response text:', responseText.substring(0, 200));
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse response as JSON:', parseError);
+        throw new Error(`Server returned invalid response: ${responseText.substring(0, 100)}`);
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+
       setToken(data.token);
       setUser(data.user);
       setSubscription(data.subscription);
@@ -81,12 +91,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ email, username, password }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Registration failed');
+      const responseText = await response.text();
+      console.log('Register response status:', response.status);
+      console.log('Register response text:', responseText.substring(0, 200));
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error('Failed to parse response as JSON:', parseError);
+        throw new Error(`Server returned invalid response: ${responseText.substring(0, 100)}`);
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+
       setToken(data.token);
       setUser(data.user);
 
