@@ -2,11 +2,18 @@ import { createClient } from '@supabase/supabase-js';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 
-const supabaseUrl = process.env.SUPABASE_URL || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY || '';
-const jwtSecret = process.env.JWT_SECRET || 'your-secret-key-change-in-prod';
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
+const jwtSecret = process.env.JWT_SECRET;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('❌ Missing Supabase configuration:', {
+    SUPABASE_URL: !!supabaseUrl,
+    SUPABASE_SERVICE_KEY: !!supabaseServiceKey,
+  });
+}
+
+const supabase = createClient(supabaseUrl || '', supabaseServiceKey || '');
 
 interface RegisterBody {
   email: string;
@@ -28,6 +35,18 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
+  }
+
+  // Check environment variables
+  if (!supabaseUrl || !supabaseServiceKey || !jwtSecret) {
+    console.error('❌ Missing environment variables:', {
+      SUPABASE_URL: !!supabaseUrl,
+      SUPABASE_SERVICE_KEY: !!supabaseServiceKey,
+      JWT_SECRET: !!jwtSecret,
+    });
+    return res.status(500).json({ 
+      error: 'Server configuration error: Missing environment variables'
+    });
   }
 
   const action = req.query.action;
@@ -60,6 +79,14 @@ async function handleRegister(req: any, res: any) {
     }
 
     console.log('📋 Checking for existing user:', email);
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Supabase not configured');
+      return res.status(500).json({ 
+        error: 'Database connection failed - server misconfiguration'
+      });
+    }
+    
     // Check if user exists
     const { data: existingUser, error: checkError } = await supabase
       .from('users')
@@ -118,6 +145,14 @@ async function handleRegister(req: any, res: any) {
     }
 
     console.log('🔑 Generating JWT token');
+    
+    if (!jwtSecret) {
+      console.error('❌ JWT_SECRET not configured');
+      return res.status(500).json({ 
+        error: 'Token generation failed - JWT_SECRET not configured'
+      });
+    }
+    
     // Generate JWT token
     const token = jwt.sign(
       { id: user.id, email: user.email },

@@ -38,7 +38,9 @@ const LoginPage: React.FC = () => {
         // AuthContext will handle redirect
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      console.error('Auth error:', err);
+      const errorMsg = err.message || 'An error occurred';
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
