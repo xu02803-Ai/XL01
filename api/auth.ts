@@ -2,9 +2,19 @@ import { createClient } from '@supabase/supabase-js';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
-const jwtSecret = process.env.JWT_SECRET || 'default-jwt-secret-change-in-production';
+// Handle environment variables with fallbacks and variations
+const supabaseUrl = process.env.SUPABASE_URL || 
+                    process.env.VITE_SUPABASE_URL ||
+                    process.env.supabase_url;
+
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY ||
+                          process.env.SUPABASE_KEY ||
+                          process.env.SUPABASE_SERVICE_SECRET ||
+                          process.env.supabase_service_key;
+
+const jwtSecret = process.env.JWT_SECRET || 
+                  process.env.JWT_SECRET_KEY ||
+                  'default-jwt-secret-change-in-production';
 
 let supabase: any = null;
 
