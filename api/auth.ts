@@ -109,6 +109,7 @@ async function handleRegister(req: any, res: any) {
       user_metadata: {
         username,
       },
+      email_confirm: true, // Auto-confirm email to allow immediate login
     });
 
     if (authError) {
