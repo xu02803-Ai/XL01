@@ -32,8 +32,8 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
   const token = getAuthToken();
   
   try {
-    console.log("🔄 Fetching news from /api/ai-hub...");
-    const response = await fetch('/api/ai-hub?type=content&dateStr=' + encodeURIComponent(dateStr), {
+    console.log("🔄 Fetching news from /api/ai-handler...");
+    const response = await fetch('/api/ai-handler?action=text&dateStr=' + encodeURIComponent(dateStr), {
       method: 'GET',
       headers: token ? {
         'Authorization': `Bearer ${token}`,
@@ -56,17 +56,20 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
       throw new Error(data.error || "Failed to fetch news");
     }
 
+    // ai-handler 返回的是 data 字段中的内容
     let jsonString = data.data || "[]";
     console.log("🔍 JSON String (first 200 chars):", jsonString.substring(0, 200));
     
-    // Clean up potential markdown formatting
-    if (jsonString.includes("```json")) {
+    // 处理可能的 Markdown 格式
+    if (typeof jsonString === 'string') {
+      if (jsonString.includes("```json")) {
         jsonString = jsonString.replace(/```json/g, "").replace(/```/g, "");
-    } else if (jsonString.includes("```")) {
+      } else if (jsonString.includes("```")) {
         jsonString = jsonString.replace(/```/g, "");
+      }
     }
     
-    const newsItems = JSON.parse(jsonString.trim()) as NewsItem[];
+    const newsItems = (typeof jsonString === 'string' ? JSON.parse(jsonString.trim()) : jsonString) as NewsItem[];
     console.log("✅ Successfully parsed news items:", newsItems.length);
 
     return {
@@ -92,7 +95,7 @@ export const generateNewsImage = async (headline: string): Promise<string | null
     
     // Add timestamp parameter to prevent caching and ensure unique images
     const timestamp = Date.now();
-    const url = `/api/ai-hub?type=image&headline=${encodeURIComponent(headline)}&timestamp=${timestamp}`;
+    const url = `/api/ai-handler?action=image&headline=${encodeURIComponent(headline)}&timestamp=${timestamp}`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -115,14 +118,13 @@ export const generateNewsImage = async (headline: string): Promise<string | null
       return null;
     }
 
-    // Handle both base64 and direct URL responses
-    if (data.isUrl) {
-      // Direct URL from API (e.g., from Unsplash)
-      console.log("✅ Image URL received");
-      return data.data; // Return URL directly
+    // ai-handler 返回 imageUrl (自动生成的 Pollinations.ai 链接)
+    if (data.imageUrl) {
+      console.log("✅ Image URL received from ai-handler");
+      return data.imageUrl; // 直接返回 URL
     }
-    
-    // Convert base64 to data URL for display
+
+    // 备用：处理 base64 响应
     if (data.data && data.mimeType) {
       console.log("✅ Image received successfully");
       return `data:${data.mimeType};base64,${data.data}`;
@@ -147,7 +149,7 @@ export const generateNewsAudio = async (text: string, voice: 'Male' | 'Female'):
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(`/api/ai-hub?type=speech&text=${encodeURIComponent(text)}&voice=${voice}`, {
+      const response = await fetch(`/api/ai-handler?action=speech&text=${encodeURIComponent(text)}&voice=${voice}`, {
         method: 'GET',
         headers: token ? {
           'Authorization': `Bearer ${token}`,

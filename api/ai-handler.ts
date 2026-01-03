@@ -1,0 +1,290 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI, Modality } from "@google/genai";
+
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const genAIModality = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+export default async function handler(req: any, res: any) {
+  // 处理跨域
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    // 从 query 或 body 中获取操作类型
+    const action = req.query.action || req.body?.action;
+
+    switch (action) {
+      case 'text':
+      case 'generate-text':
+        return handleTextGeneration(req, res);
+
+      case 'speech':
+      case 'synthesize-speech':
+        return handleSpeechSynthesis(req, res);
+
+      case 'image':
+      case 'generate-image':
+        return handleImageGeneration(req, res);
+
+      default:
+        // 默认行为：如果有 text 字段则生成文本
+        if (req.body?.text || req.query?.text) {
+          return handleTextGeneration(req, res);
+        }
+        return res.status(400).json({ error: "Missing action parameter. Use ?action=text|speech|image" });
+    }
+  } catch (error: any) {
+    console.error("❌ AI Handler Error:", error.message);
+    return res.status(500).json({ error: "AI 服务调用失败", details: error.message });
+  }
+}
+
+/**
+ * 处理文本生成（新闻、内容等）
+ */
+async function handleTextGeneration(req: any, res: any) {
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { text, prompt, dateStr } = req.method === 'GET' ? req.query : req.body;
+  const inputContent = text || prompt || buildNewsPrompt(dateStr);
+
+  if (!inputContent) {
+    return res.status(400).json({ error: "Missing content/prompt in request" });
+  }
+
+  try {
+    console.log("🚀 尝试使用 Gemini 2.5 Flash (优先版本)...");
+
+    // 尝试使用 2.5 版本
+    const model25 = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model25.generateContent(inputContent);
+    const response = await result.response;
+
+    return res.status(200).json({
+      success: true,
+      data: response.text(),
+      model: "gemini-2.5-flash"
+    });
+
+  } catch (error: any) {
+    // 核心逻辑：检测是否为配额错误
+    const isQuotaExceeded = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('RESOURCE_EXHAUSTED') ||
+      error.message?.includes('rate limit');
+
+    if (isQuotaExceeded) {
+      console.warn("⚠️ 2.5 版本额度用尽，正在自动切换到 1.5 Flash...");
+
+      try {
+        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result15 = await model15.generateContent(inputContent);
+        const response15 = await result15.response;
+
+        return res.status(200).json({
+          success: true,
+          data: response15.text(),
+          model: "gemini-1.5-flash (Fallback)"
+        });
+      } catch (fallbackError: any) {
+        return res.status(500).json({
+          error: "所有文本生成通道均不可用",
+          details: fallbackError.message
+        });
+      }
+    }
+
+    // 其他错误
+    return res.status(500).json({
+      error: "文本生成服务调用失败",
+      details: error.message
+    });
+  }
+}
+
+/**
+ * 处理语音合成
+ */
+async function handleSpeechSynthesis(req: any, res: any) {
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const params = req.method === 'GET' ? req.query : req.body;
+  const { text, voice = 'female' } = params;
+
+  if (!text) {
+    return res.status(400).json({ error: "Missing text in request" });
+  }
+
+  // TTS 模型列表
+  const ttsModels = [
+    'gemini-2.5-flash-preview-tts', // 优先尝试最新版本
+    'gemini-1.5-pro',               // 降级方案
+  ];
+
+  for (const modelId of ttsModels) {
+    try {
+      console.log(`🎙️ 尝试语音合成，模型: ${modelId}, 声音: ${voice}`);
+
+      const response = await genAIModality.models.generateContent({
+        model: modelId,
+        contents: [{
+          role: "user",
+          parts: [{ text }]
+        }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: voice
+              }
+            }
+          }
+        }
+      } as any);
+
+      const part = response.candidates?.[0]?.content?.parts?.[0];
+
+      if (part && "inlineData" in part && part.inlineData) {
+        console.log(`✅ 语音合成成功，使用模型 ${modelId}`);
+        return res.status(200).json({
+          success: true,
+          data: part.inlineData.data,
+          mimeType: part.inlineData.mimeType || 'audio/mpeg',
+          model: modelId
+        });
+      }
+
+    } catch (error: any) {
+      const errorMsg = error.message || String(error);
+      console.warn(`⚠️ 模型 ${modelId} 失败:`, errorMsg);
+
+      // 检查是否为配额错误
+      if (errorMsg.includes('RESOURCE_EXHAUSTED') ||
+        errorMsg.includes('quota') ||
+        errorMsg.includes('429')) {
+        console.warn(`🔄 ${modelId} 配额已用，尝试降级...`);
+        continue;
+      }
+
+      // 其他错误也继续尝试下一个模型
+      continue;
+    }
+  }
+
+  return res.status(500).json({
+    error: "所有语音合成通道均不可用",
+    details: "没有可用的 TTS 模型"
+  });
+}
+
+/**
+ * 处理图片生成（生成提示词）
+ */
+async function handleImageGeneration(req: any, res: any) {
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const params = req.method === 'GET' ? req.query : req.body;
+  const { headline } = params;
+
+  if (!headline) {
+    return res.status(400).json({ error: "Missing headline in request" });
+  }
+
+  const prompt = `Given the news headline: "${headline}"
+Generate an image prompt that describes a fitting visual representation. The prompt should be vivid, descriptive, and suitable for AI image generation.
+Return ONLY the image prompt, no additional text.`;
+
+  try {
+    console.log("🖼️ 正在生成图片提示词...");
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const imagePrompt = response.text();
+
+    // 使用免费的图片生成服务
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}`;
+
+    return res.status(200).json({
+      success: true,
+      prompt: imagePrompt,
+      imageUrl: imageUrl,
+      isUrl: true,
+      model: "gemini-2.5-flash"
+    });
+
+  } catch (error: any) {
+    // 检测配额错误
+    const isQuotaExceeded = error.message?.includes('429') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('RESOURCE_EXHAUSTED');
+
+    if (isQuotaExceeded) {
+      console.warn("⚠️ 2.5 配额用尽，使用 1.5 Flash...");
+
+      try {
+        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result15 = await model15.generateContent(prompt);
+        const response15 = await result15.response;
+        const imagePrompt = response15.text();
+
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}`;
+
+        return res.status(200).json({
+          success: true,
+          prompt: imagePrompt,
+          imageUrl: imageUrl,
+          isUrl: true,
+          model: "gemini-1.5-flash (Fallback)"
+        });
+      } catch (fallbackError: any) {
+        return res.status(500).json({
+          error: "图片提示词生成失败",
+          details: fallbackError.message
+        });
+      }
+    }
+
+    return res.status(500).json({
+      error: "图片生成服务调用失败",
+      details: error.message
+    });
+  }
+}
+
+/**
+ * 构建新闻生成提示词
+ */
+function buildNewsPrompt(dateStr?: string): string {
+  const now = new Date();
+  const today = dateStr || now.toISOString().split('T')[0];
+
+  const yesterdayDate = new Date(now);
+  yesterdayDate.setDate(now.getDate() - 1);
+  const yesterday = yesterdayDate.toISOString().split('T')[0];
+
+  return `
+Role: Editor-in-Chief for "TechPulse Daily" (每日科技脉搏).
+Task: Curate the most significant global technology news strictly for **${today}** (and late ${yesterday}).
+Language: Simplified Chinese (简体中文).
+
+CRITICAL DATE CONSTRAINT:
+- You must ONLY include news that happened or was reported on **${yesterday}** or **${today}**.
+- **ABSOLUTELY NO NEWS OLDER THAN 48 HOURS.**
+- If a story is from last week, DISCARD IT immediately.
+
+[Rest of news generation instructions...]
+
+Return as JSON array with objects containing: title, content, source, url, date.
+`;
+}
