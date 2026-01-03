@@ -115,7 +115,7 @@ async function getProfile(user: any, res: any) {
       .eq('user_id', user.id)
       .limit(1);
 
-    const userData = data[0];
+    const userData: any = data[0];
     userData.two_fa_enabled = twoFA?.[0]?.enabled || false;
 
     res.status(200).json({
