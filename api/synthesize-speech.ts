@@ -1,4 +1,5 @@
 import { GoogleGenAI, Modality } from "@google/genai";
+import { getModelStats } from "./gemini-utils";
 
 const getApiKey = () => {
   const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
@@ -7,6 +8,84 @@ const getApiKey = () => {
   }
   return key;
 };
+
+// Call TTS models with automatic fallback
+async function callTTSWithFallback(
+  apiKey: string,
+  text: string,
+  voiceName: string
+): Promise<{ success: boolean; data?: string; mimeType?: string; model?: string; error?: string }> {
+  // Models to try in order (primary to fallback)
+  const models = [
+    'gemini-2.5-flash-preview-tts',  // Primary - latest TTS
+    'gemini-1.5-pro',                 // Fallback - stable
+  ];
+
+  let lastError = "";
+
+  for (const modelId of models) {
+    try {
+      console.log(`🎙️ Attempting TTS with model: ${modelId}, voice: ${voiceName}`);
+      
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: modelId,
+        contents: [{
+          role: "user",
+          parts: [{ text }]
+        }],
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: voiceName
+              }
+            }
+          }
+        }
+      } as any);
+
+      const part = response.candidates?.[0]?.content?.parts?.[0];
+      
+      if (part && "inlineData" in part && part.inlineData) {
+        console.log(`✅ TTS success with model ${modelId}`);
+        return {
+          success: true,
+          data: part.inlineData.data,
+          mimeType: part.inlineData.mimeType || 'audio/mpeg',
+          model: modelId
+        };
+      }
+
+      lastError = "No audio data in response";
+      console.warn(`⚠️ Model ${modelId} returned no audio data, trying next...`);
+      
+    } catch (error: any) {
+      lastError = error.message || String(error);
+      console.warn(`⚠️ TTS model ${modelId} failed:`, lastError);
+      
+      // Check if it's a quota error
+      if (
+        lastError.includes("RESOURCE_EXHAUSTED") ||
+        lastError.includes("quota") ||
+        lastError.includes("429") ||
+        lastError.includes("rate limit")
+      ) {
+        console.warn(`🔄 Quota exceeded for ${modelId}, trying fallback...`);
+        continue;
+      }
+      
+      // Try next model anyway
+      continue;
+    }
+  }
+
+  return {
+    success: false,
+    error: `All TTS models failed. Last error: ${lastError}`,
+  };
+}
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -24,14 +103,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { text, voice } = req.query;
-    
-    if (!text || !voice) {
-      return res.status(400).json({ error: "Missing text or voice parameter" });
-    }
-
     const apiKey = getApiKey();
-    const ai = new GoogleGenAI({ apiKey });
     const decodedText = decodeURIComponent(text);
     
     // Map voice parameter to valid voice names
@@ -46,39 +118,25 @@ export default async function handler(req: any, res: any) {
     
     const voiceName = voiceMap[voice] || 'Kore';
     
-    console.log("🎙️ Generating audio with gemini-2.5-flash-preview-tts, voice:", voiceName, "Text length:", decodedText.length);
+    console.log("🎙️ Calling TTS API with fallback support, voice:", voiceName, "Text length:", decodedText.length);
     
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-tts',
-      contents: [{
-        role: "user",
-        parts: [{ text: decodedText }]
-      }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: voiceName
-            }
-          }
-        }
-      }
-    } as any);
+    const result = await callTTSWithFallback(apiKey, decodedText, voiceName);
 
-    const part = response.candidates?.[0]?.content?.parts?.[0];
-    
-    if (part && "inlineData" in part && part.inlineData) {
-      console.log("✅ Audio generated successfully with voice:", voiceName);
+    if (result.success) {
       return res.status(200).json({ 
         success: true, 
-        data: part.inlineData.data,
-        mimeType: part.inlineData.mimeType || 'audio/mpeg'
+        data: result.data,
+        mimeType: result.mimeType,
+        model: result.model
       });
     }
     
     console.warn("❌ No audio data in response");
-    return res.status(200).json({ success: false, error: "No audio data generated" });
+    return res.status(200).json({ 
+      success: false, 
+      error: result.error,
+      modelStats: getModelStats()
+    });
     
   } catch (error: any) {
     console.error("❌ Audio generation error:", error.message);

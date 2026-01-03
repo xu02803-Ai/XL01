@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { callGeminiWithFallback } from "./gemini-utils";
 
 const getApiKey = () => {
   const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
@@ -11,20 +11,15 @@ const getApiKey = () => {
 // Generate an optimized tech-focused prompt from headline
 const generateImagePrompt = async (headline: string, apiKey: string): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
+    const prompt = `Create a detailed, tech-focused image generation prompt for this tech news. The image should be visually striking, modern, and directly related to the content. Use vibrant colors, NOT dark colors.\n\nNews headline: "${headline}"\n\nReturn a single, detailed prompt (max 150 words) optimized for AI image generation. Focus on: bright and vibrant visual style, tech elements, composition, professional lighting, and mood. Make it specific to the news topic. IMPORTANT: Use bright colors and good lighting, avoid dark images.`;
+    
+    const result = await callGeminiWithFallback(apiKey, prompt, {
       model: "gemini-2.5-flash",
-      contents: [{
-        role: "user",
-        parts: [{ 
-          text: `Create a detailed, tech-focused image generation prompt for this tech news. The image should be visually striking, modern, and directly related to the content. Use vibrant colors, NOT dark colors.\n\nNews headline: "${headline}"\n\nReturn a single, detailed prompt (max 150 words) optimized for AI image generation. Focus on: bright and vibrant visual style, tech elements, composition, professional lighting, and mood. Make it specific to the news topic. IMPORTANT: Use bright colors and good lighting, avoid dark images.`
-        }]
-      }]
-    } as any);
+      maxTokens: 256,
+    });
 
-    const content = response.candidates?.[0]?.content?.parts?.[0] as any;
-    if (content && "text" in content) {
-      return content.text.trim();
+    if (result.success && result.content) {
+      return result.content.trim();
     }
     return `Modern bright technology news illustration about ${headline}, professional, tech aesthetic, digital art, vibrant colors, well-lit, futuristic, high quality`;
   } catch (e) {
@@ -51,20 +46,15 @@ const tryGeminiImageGeneration = async (prompt: string, apiKey: string): Promise
 // Extract key terms from headline for search query fallback
 const extractKeyTerms = async (headline: string, apiKey: string): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const response = await ai.models.generateContent({
+    const prompt = `Extract 2-3 key terms from this tech news headline for image search. Return ONLY the terms separated by commas, no explanation.\n\nHeadline: "${headline}"`;
+    
+    const result = await callGeminiWithFallback(apiKey, prompt, {
       model: "gemini-2.5-flash",
-      contents: [{
-        role: "user",
-        parts: [{ 
-          text: `Extract 2-3 key terms from this tech news headline for image search. Return ONLY the terms separated by commas, no explanation.\n\nHeadline: "${headline}"`
-        }]
-      }]
-    } as any);
+      maxTokens: 50,
+    });
 
-    const content = response.candidates?.[0]?.content?.parts?.[0] as any;
-    if (content && "text" in content) {
-      return content.text.trim().split(',')[0].trim(); // Get first term
+    if (result.success && result.content) {
+      return result.content.trim().split(',')[0].trim();
     }
     return headline.split(' ').slice(0, 2).join(' '); // Fallback
   } catch (e) {

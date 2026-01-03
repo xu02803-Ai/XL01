@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { callGeminiWithFallback, getModelStats } from "./gemini-utils";
 
 const getApiKey = () => {
   const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
@@ -36,8 +36,6 @@ export default async function handler(req: any, res: any) {
 
   try {
     const apiKey = getApiKey();
-    const ai = new GoogleGenAI({ apiKey });
-    const modelId = "gemini-2.5-flash";
     const { today, yesterday } = getDateContext();
 
     const prompt = `
@@ -75,29 +73,25 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
 ]
 `;
 
-    console.log("📰 Calling Gemini API with model:", modelId);
+    console.log("📰 Calling Gemini API with fallback support");
     
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: [{
-        role: "user",
-        parts: [{ text: prompt }]
-      }],
-      config: {
-        tools: [{ googleSearch: {} }]
-      }
-    } as any);
+    const result = await callGeminiWithFallback(apiKey, prompt, {
+      model: "gemini-2.5-flash",
+      maxTokens: 4096,
+    });
 
-    console.log("📰 API Response received");
-    
-    const content = response.candidates?.[0]?.content?.parts?.[0];
-    
-    if (!content || !("text" in content)) {
-      console.error("❌ No text content in response");
-      return res.status(500).json({ success: false, error: "No text response from API" });
+    if (!result.success) {
+      console.error("❌ Content generation failed:", result.error);
+      return res.status(500).json({ 
+        success: false,
+        error: result.error,
+        modelStats: getModelStats()
+      });
     }
 
-    let jsonString = content.text.trim();
+    console.log("✅ API Response received from model:", result.model);
+    
+    let jsonString = result.content!.trim();
     
     // Clean markdown if present
     jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
