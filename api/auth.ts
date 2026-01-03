@@ -70,6 +70,10 @@ export default async function handler(req: any, res: any) {
     return debugUser(req, res);
   }
 
+  if (req.method === 'POST' && action === 'sync-auth-user') {
+    return syncAuthUser(req, res);
+  }
+
   if (req.method === 'GET') {
     return res.status(200).json({ 
       success: true,
@@ -127,6 +131,67 @@ async function debugUser(req: any, res: any) {
   }
 }
 
+async function syncAuthUser(req: any, res: any) {
+  try {
+    const { email, username } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email required' });
+    }
+
+    console.log('🔄 Syncing user with Auth:', email);
+
+    // Find auth user
+    const { data: authUsers, error: listError } = await supabase.auth.admin.listUsers();
+    
+    if (listError) {
+      return res.status(500).json({ error: 'Failed to list users', debug: listError.message });
+    }
+
+    const authUser = authUsers?.users?.find(u => u.email === email);
+    
+    if (!authUser) {
+      return res.status(404).json({ error: 'User not found in Auth system' });
+    }
+
+    console.log('👤 Found auth user:', authUser.id);
+
+    // Sync to public.users
+    const { data: syncedUser, error: syncError } = await supabase
+      .from('users')
+      .upsert([
+        {
+          id: authUser.id,
+          email: authUser.email,
+          username: username || authUser.user_metadata?.username || authUser.email.split('@')[0],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+      ], { onConflict: 'id' })
+      .select();
+
+    if (syncError) {
+      console.error('Sync error:', syncError);
+      return res.status(500).json({ error: 'Failed to sync user', debug: syncError.message });
+    }
+
+    console.log('✅ User synced successfully');
+
+    res.status(200).json({
+      success: true,
+      message: 'User synced successfully',
+      user: {
+        id: authUser.id,
+        email: authUser.email,
+        email_confirmed_at: authUser.email_confirmed_at,
+        username: syncedUser?.[0]?.username,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
 async function handleRegister(req: any, res: any) {
   try {
     console.log('🔐 Register request received');
@@ -174,6 +239,7 @@ async function handleRegister(req: any, res: any) {
     console.log('👤 User created in Auth:', authUser.user.id);
 
     // Create or update user profile in public.users table
+    // NOTE: Do NOT store password_hash here - Supabase Auth manages passwords
     const { data: userProfile, error: profileError } = await supabase
       .from('users')
       .upsert([
@@ -181,7 +247,9 @@ async function handleRegister(req: any, res: any) {
           id: authUser.user.id,
           email: authUser.user.email,
           username,
+          // password_hash should NOT be stored here - Supabase Auth manages it
           created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         },
       ], { onConflict: 'id' })
       .select();
