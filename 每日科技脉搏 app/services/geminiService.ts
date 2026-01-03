@@ -32,8 +32,8 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
   const token = getAuthToken();
   
   try {
-    console.log("🔄 Fetching news from /api/generate-content...");
-    const response = await fetch('/api/generate-content?dateStr=' + encodeURIComponent(dateStr), {
+    console.log("🔄 Fetching news from /api/ai-hub...");
+    const response = await fetch('/api/ai-hub?type=content&dateStr=' + encodeURIComponent(dateStr), {
       method: 'GET',
       headers: token ? {
         'Authorization': `Bearer ${token}`,
@@ -92,7 +92,7 @@ export const generateNewsImage = async (headline: string): Promise<string | null
     
     // Add timestamp parameter to prevent caching and ensure unique images
     const timestamp = Date.now();
-    const url = `/api/generate-image?headline=${encodeURIComponent(headline)}&timestamp=${timestamp}`;
+    const url = `/api/ai-hub?type=image&headline=${encodeURIComponent(headline)}&timestamp=${timestamp}`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -147,7 +147,7 @@ export const generateNewsAudio = async (text: string, voice: 'Male' | 'Female'):
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(`/api/synthesize-speech?text=${encodeURIComponent(text)}&voice=${voice}`, {
+      const response = await fetch(`/api/ai-hub?type=speech&text=${encodeURIComponent(text)}&voice=${voice}`, {
         method: 'GET',
         headers: token ? {
           'Authorization': `Bearer ${token}`,
