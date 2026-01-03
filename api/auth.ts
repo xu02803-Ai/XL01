@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import * as jwt from 'jsonwebtoken';
 
 // Handle environment variables with fallbacks and variations
 const supabaseUrl = process.env.SUPABASE_URL || 
@@ -217,87 +216,73 @@ async function handleRegister(req: any, res: any) {
       });
     }
     
-    // Use Supabase Auth to create user (handles password hashing automatically)
-    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+    // Use Supabase standard signUp (returns official access token)
+    const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
-      user_metadata: {
-        username,
+      options: {
+        data: { username }, // Store username in metadata
       },
-      email_confirm: true, // Auto-confirm email to allow immediate login
     });
 
     if (authError) {
       console.error('❌ Auth error:', authError);
-      // Check if user already exists
       if (authError.message.includes('already exists')) {
         return res.status(400).json({ error: 'User already exists' });
       }
-      return res.status(500).json({ error: authError.message || 'Failed to create user' });
+      return res.status(500).json({ error: authError.message || 'Failed to register' });
     }
 
-    console.log('👤 User created in Auth:', authUser.user.id);
+    const authUser = authData.user;
+    console.log('👤 User created in Auth:', authUser?.id);
 
-    // Create or update user profile in public.users table
-    // NOTE: Do NOT store password_hash here - Supabase Auth manages passwords
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .upsert([
+    // Sync to public.users table
+    if (authUser) {
+      const { error: profileError } = await supabase
+        .from('users')
+        .upsert([
+          {
+            id: authUser.id,
+            email: authUser.email,
+            username,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ], { onConflict: 'id' });
+
+      if (profileError) {
+        console.error('⚠️ Profile creation error:', profileError);
+      } else {
+        console.log('✅ User profile created:', authUser.id);
+      }
+
+      // Create free subscription
+      console.log('📦 Creating free subscription');
+      const { error: subError } = await supabase.from('subscriptions').upsert([
         {
-          id: authUser.user.id,
-          email: authUser.user.email,
-          username,
-          // password_hash should NOT be stored here - Supabase Auth manages it
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          user_id: authUser.id,
+          plan: 'free',
+          status: 'active',
         },
-      ], { onConflict: 'id' })
-      .select();
+      ]);
 
-    if (profileError) {
-      console.error('⚠️ Profile creation error:', profileError);
-      // Don't fail if profile creation fails - auth user was created successfully
-    } else {
-      console.log('✅ User profile created:', authUser.user.id);
+      if (subError) {
+        console.error('⚠️ Subscription creation error:', subError);
+      }
     }
-
-    console.log('📦 Creating free subscription');
-    // Create free subscription
-    const { error: subError } = await supabase.from('subscriptions').insert([
-      {
-        user_id: authUser.user.id,
-        plan: 'free',
-        status: 'active',
-      },
-    ]);
-
-    if (subError) {
-      console.error('⚠️ Subscription creation error:', subError);
-      // Don't fail registration if subscription fails
-    }
-
-    console.log('🔑 Generating JWT token');
-    // Generate JWT token for immediate use
-    const token = jwt.sign(
-      { 
-        id: authUser.user.id, 
-        email: authUser.user.email,
-        email_confirmed_at: authUser.user.email_confirmed_at,
-      },
-      jwtSecret,
-      { expiresIn: '30d' }
-    );
 
     console.log('✅ Registration successful');
     res.status(201).json({
       success: true,
       user: {
-        id: authUser.user.id,
-        email: authUser.user.email,
+        id: authUser?.id,
+        email: authUser?.email,
         username,
       },
-      token,
-      message: 'Registration successful. You can now login.',
+      token: authData.session?.access_token || null,
+      message: authData.session 
+        ? 'Registration successful. You can now login.' 
+        : 'Registration successful. Please check your email to confirm your account.',
     });
   } catch (error: any) {
     console.error('❌ Registration error:', error);
