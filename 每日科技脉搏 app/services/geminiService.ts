@@ -90,7 +90,11 @@ export const generateNewsImage = async (headline: string): Promise<string | null
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
     
-    const response = await fetch(`/api/generate-image?headline=${encodeURIComponent(headline)}`, {
+    // Add timestamp parameter to prevent caching and ensure unique images
+    const timestamp = Date.now();
+    const url = `/api/generate-image?headline=${encodeURIComponent(headline)}&timestamp=${timestamp}`;
+    
+    const response = await fetch(url, {
       method: 'GET',
       signal: controller.signal,
       headers: token ? {

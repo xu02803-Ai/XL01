@@ -58,33 +58,48 @@ const extractKeyTerms = async (headline: string, apiKey: string): Promise<string
   }
 };
 
-// Fetch image from Unsplash with tech-focused search
-const fetchFromUnsplash = async (query: string, headline: string): Promise<{ url: string; mimeType: string } | null> => {
+// Fetch image from Unsplash with tech-focused search and randomization
+const fetchFromUnsplash = async (query: string, headline: string, randomSeed: string): Promise<{ url: string; mimeType: string } | null> => {
   try {
-    // Try primary search query
+    // Try primary search query with enhanced variety
     let searchQueries = [
       `${query} technology`, // Original query + tech
       `${query} digital`, // With digital context
-      'technology innovation', // Generic fallback
+      `${query} innovation`, // With innovation context
+      `technology innovation news`, // Generic fallback
       'tech news modern', // Generic tech aesthetic
+      'artificial intelligence', // Tech industry focus
+      'digital transformation', // Tech focus
+      'cloud computing technology', // Tech infrastructure
     ];
 
     for (const searchQuery of searchQueries) {
       try {
+        // Add random sort and pagination for variety
+        const page = Math.floor(Math.random() * 5) + 1; // Random page 1-5
+        const perPage = Math.floor(Math.random() * 3) + 3; // 3-5 results
+        
         const response = await fetch(
-          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchQuery)}&per_page=3&order_by=relevant&client_id=YOUR_UNSPLASH_KEY`,
+          `https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchQuery)}&per_page=${perPage}&page=${page}&order_by=relevant&client_id=YOUR_UNSPLASH_KEY`,
           { headers: { Accept: 'application/json' } }
         );
 
         if (response.ok) {
           const data = await response.json();
           if (data.results && data.results.length > 0) {
-            // Pick a random one from results for variety
-            const randomIndex = Math.floor(Math.random() * Math.min(data.results.length, 3));
+            // Always pick a random one from results for maximum variety
+            const randomIndex = Math.floor(Math.random() * data.results.length);
             const imageUrl = data.results[randomIndex].urls.regular;
-            console.log(`✅ Found image for query: "${searchQuery}"`);
+            
+            // Add query params to bypass any browser/CDN caching
+            const cacheBreaker = `&t=${randomSeed}&v=${Date.now()}`;
+            const finalUrl = imageUrl.includes('?') 
+              ? `${imageUrl}${cacheBreaker}`
+              : `${imageUrl}?${cacheBreaker}`;
+            
+            console.log(`✅ Found image for query: "${searchQuery}" (page ${page}, index ${randomIndex})`);
             return {
-              url: imageUrl,
+              url: finalUrl,
               mimeType: 'image/jpeg'
             };
           }
@@ -95,16 +110,28 @@ const fetchFromUnsplash = async (query: string, headline: string): Promise<{ url
       }
     }
 
-    // Fallback: use a high-quality tech-themed placeholder with dynamic seed
-    const seed = Math.random();
+    // Fallback: use a high-quality tech-themed placeholder with dynamic parameters
+    const fallbackImages = [
+      'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=800&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1550355291-bbee04a92027?w=800&h=600&fit=crop',
+      'https://images.unsplash.com/photo-1536384816338-efea798d13cb?w=800&h=600&fit=crop',
+    ];
+    
+    const fallbackIndex = parseInt(randomSeed.substring(0, 8), 16) % fallbackImages.length;
+    const selectedFallback = fallbackImages[fallbackIndex];
+    
+    console.log(`Using fallback image ${fallbackIndex + 1}/5: ${selectedFallback}`);
+    
     return {
-      url: `https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=800&h=600&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8ZW58MHx8fHx8fA%3D%3D&random=${seed}`,
+      url: `${selectedFallback}&t=${randomSeed}`,
       mimeType: 'image/jpeg'
     };
   } catch (e) {
     console.warn("Unsplash fetch failed, using tech-themed placeholder");
     return {
-      url: `https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&h=600&fit=crop&ixlib=rb-4.0.3`,
+      url: `https://images.unsplash.com/photo-1517694712202-14dd9538aa97?w=800&h=600&fit=crop&t=${randomSeed}`,
       mimeType: 'image/jpeg'
     };
   }
@@ -134,6 +161,11 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
   res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  
+  // Prevent caching to ensure fresh images each time
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -145,7 +177,7 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const { headline } = req.query;
+    const { headline, timestamp } = req.query;
     
     if (!headline) {
       return res.status(400).json({ error: "Missing headline parameter" });
@@ -154,7 +186,12 @@ export default async function handler(req: any, res: any) {
     const apiKey = getApiKey();
     const decodedHeadline = decodeURIComponent(headline);
     
+    // Generate unique random seed based on timestamp, random value, and headline
+    // This ensures each request gets a different image even for the same headline
+    const randomSeed = `${Date.now()}-${Math.random().toString(36).substring(2)}-${Math.random().toString(36).substring(2)}`;
+    
     console.log("🖼️ Generating tech-focused image for headline:", decodedHeadline);
+    console.log("🎲 Random seed:", randomSeed);
     
     // Step 1: Generate tech-focused image prompt
     console.log("📝 Generating optimized image prompt...");
@@ -165,8 +202,8 @@ export default async function handler(req: any, res: any) {
     const searchQuery = await extractKeyTerms(decodedHeadline, apiKey);
     console.log("🔍 Search query:", searchQuery);
     
-    // Step 3: Fetch image from Unsplash with enhanced search
-    const imageData = await fetchFromUnsplash(searchQuery, decodedHeadline);
+    // Step 3: Fetch image from Unsplash with enhanced search and randomization
+    const imageData = await fetchFromUnsplash(searchQuery, decodedHeadline, randomSeed);
     if (!imageData) {
       console.warn("❌ Failed to fetch image");
       return res.status(200).json({ success: false, error: "Could not fetch image" });
@@ -182,7 +219,8 @@ export default async function handler(req: any, res: any) {
         success: true, 
         data: base64Data,
         mimeType: imageData.mimeType,
-        prompt: imagePrompt // Return the prompt for reference
+        prompt: imagePrompt,
+        seed: randomSeed // Return seed for debugging
       });
     }
     
@@ -193,7 +231,8 @@ export default async function handler(req: any, res: any) {
       data: imageData.url,
       mimeType: imageData.mimeType,
       isUrl: true,
-      prompt: imagePrompt // Return the prompt for reference
+      prompt: imagePrompt,
+      seed: randomSeed // Return seed for debugging
     });
     
   } catch (error: any) {
