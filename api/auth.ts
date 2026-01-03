@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js';
-import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
 
 // Handle environment variables with fallbacks and variations
@@ -94,7 +93,7 @@ async function handleRegister(req: any, res: any) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
     }
 
-    console.log('📋 Checking for existing user:', email);
+    console.log('📋 Registering user with Supabase Auth:', email);
     
     if (!supabaseUrl || !supabaseServiceKey) {
       console.error('❌ Supabase not configured');
@@ -103,53 +102,51 @@ async function handleRegister(req: any, res: any) {
       });
     }
     
-    // Check if user exists
-    const { data: existingUser, error: checkError } = await supabase
-      .from('users')
-      .select('id')
-      .or(`email.eq.${email},username.eq.${username}`)
-      .limit(1);
+    // Use Supabase Auth to create user (handles password hashing automatically)
+    const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      user_metadata: {
+        username,
+      },
+    });
 
-    if (checkError) {
-      console.error('❌ Database error checking user:', checkError);
-      return res.status(500).json({ error: 'Database error: ' + checkError.message });
+    if (authError) {
+      console.error('❌ Auth error:', authError);
+      // Check if user already exists
+      if (authError.message.includes('already exists')) {
+        return res.status(400).json({ error: 'User already exists' });
+      }
+      return res.status(500).json({ error: authError.message || 'Failed to create user' });
     }
 
-    if (existingUser && existingUser.length > 0) {
-      console.warn('❌ User already exists:', email);
-      return res.status(400).json({ error: 'User already exists' });
-    }
+    console.log('👤 User created in Auth:', authUser.user.id);
 
-    console.log('🔒 Hashing password');
-    // Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    console.log('👤 Creating user in database');
-    // Create user
-    const { data: newUser, error } = await supabase
+    // Create or update user profile in public.users table
+    const { data: userProfile, error: profileError } = await supabase
       .from('users')
-      .insert([
+      .upsert([
         {
-          email,
+          id: authUser.user.id,
+          email: authUser.user.email,
           username,
-          password_hash: passwordHash,
+          created_at: new Date().toISOString(),
         },
-      ])
+      ], { onConflict: 'id' })
       .select();
 
-    if (error || !newUser || newUser.length === 0) {
-      console.error('❌ Registration error:', error);
-      return res.status(500).json({ error: error?.message || 'Failed to create user' });
+    if (profileError) {
+      console.error('⚠️ Profile creation error:', profileError);
+      // Don't fail if profile creation fails - auth user was created successfully
+    } else {
+      console.log('✅ User profile created:', authUser.user.id);
     }
-
-    const user = newUser[0];
-    console.log('✅ User created:', user.id);
 
     console.log('📦 Creating free subscription');
     // Create free subscription
     const { error: subError } = await supabase.from('subscriptions').insert([
       {
-        user_id: user.id,
+        user_id: authUser.user.id,
         plan: 'free',
         status: 'active',
       },
@@ -160,31 +157,18 @@ async function handleRegister(req: any, res: any) {
       // Don't fail registration if subscription fails
     }
 
-    console.log('🔑 Generating JWT token');
-    
-    if (!jwtSecret) {
-      console.error('❌ JWT_SECRET not configured');
-      return res.status(500).json({ 
-        error: 'Token generation failed - JWT_SECRET not configured'
-      });
-    }
-    
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      jwtSecret,
-      { expiresIn: '30d' }
-    );
+    // Generate session JWT (use Supabase's JWT)
+    const token = authUser.user.new_confirmation_token || '';
 
     console.log('✅ Registration successful');
     res.status(201).json({
       success: true,
       user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
+        id: authUser.user.id,
+        email: authUser.user.email,
+        username,
       },
-      token,
+      message: 'Registration successful. Please verify your email.',
     });
   } catch (error: any) {
     console.error('❌ Registration error:', error);
@@ -202,59 +186,49 @@ async function handleLogin(req: any, res: any) {
       return res.status(400).json({ error: 'Missing email or password' });
     }
 
-    console.log('🔍 Looking up user:', email);
-    // Get user
-    const { data: users, error } = await supabase
+    console.log('� Authenticating with Supabase Auth');
+    // Use Supabase Auth to verify credentials (handles password comparison securely)
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      console.warn('❌ Auth error:', authError.message);
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const authUser = authData.user;
+    console.log('✅ User authenticated:', authUser.id);
+
+    console.log('📋 Fetching user profile');
+    // Get user profile
+    const { data: userProfile } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email)
-      .limit(1);
-
-    if (error || !users || users.length === 0) {
-      console.warn('❌ User not found or database error:', error?.message);
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const user = users[0];
-    console.log('✅ User found:', user.id);
-
-    console.log('🔑 Verifying password');
-    // Verify password
-    const passwordMatch = await bcrypt.compare(password, user.password_hash);
-    if (!passwordMatch) {
-      console.warn('❌ Password mismatch for user:', email);
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    console.log('✅ Password verified');
-
-    console.log('🎫 Generating JWT token');
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      jwtSecret,
-      { expiresIn: '30d' }
-    );
+      .eq('id', authUser.id)
+      .limit(1)
+      .single();
 
     console.log('📦 Fetching subscription info');
     // Get subscription info
     const { data: subscription } = await supabase
       .from('subscriptions')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', authUser.id)
       .limit(1);
 
     console.log('✅ Login successful');
     res.status(200).json({
       success: true,
       user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        avatar_url: user.avatar_url,
+        id: authUser.id,
+        email: authUser.email,
+        username: userProfile?.username || '',
+        avatar_url: userProfile?.avatar_url || null,
       },
       subscription: subscription?.[0] || null,
-      token,
+      token: authData.session.access_token,
     });
   } catch (error: any) {
     console.error('❌ Login error:', error);
