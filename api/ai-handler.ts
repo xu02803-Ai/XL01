@@ -1,8 +1,10 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleGenAI, Modality } from "@google/genai";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const genAIModality = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+// 确保环境变量存在，否则提前报错，方便排查
+const apiKey = process.env.GEMINI_API_KEY;
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+const genAIModality = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 export default async function handler(req: any, res: any) {
   // 处理跨域
@@ -12,27 +14,35 @@ export default async function handler(req: any, res: any) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
+  // 1. 基础环境检查
+  if (!genAI || !genAIModality) {
+    console.error("❌ 服务器未配置 GEMINI_API_KEY");
+    return res.status(500).json({ error: "服务器未配置 GEMINI_API_KEY" });
+  }
+
   try {
-    // 从 query 或 body 中获取操作类型
-    const action = req.query.action || req.body?.action;
+    // 2. 确保获取了 body（修复解构报错）
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const action = req.query.action || body?.action;
 
     switch (action) {
       case 'text':
       case 'generate-text':
-        return handleTextGeneration(req, res);
+        return handleTextGeneration(req, res, genAI);
 
       case 'speech':
       case 'synthesize-speech':
-        return handleSpeechSynthesis(req, res);
+        return handleSpeechSynthesis(req, res, genAIModality);
 
       case 'image':
       case 'generate-image':
-        return handleImageGeneration(req, res);
+        return handleImageGeneration(req, res, genAI);
 
       default:
         // 默认行为：如果有 text 字段则生成文本
-        if (req.body?.text || req.query?.text) {
-          return handleTextGeneration(req, res);
+        const body_check = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        if (body_check?.text || req.query?.text) {
+          return handleTextGeneration(req, res, genAI);
         }
         return res.status(400).json({ error: "Missing action parameter. Use ?action=text|speech|image" });
     }
@@ -45,12 +55,17 @@ export default async function handler(req: any, res: any) {
 /**
  * 处理文本生成（新闻、内容等）
  */
-async function handleTextGeneration(req: any, res: any) {
+async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeAI | null) {
+  if (!genAI) {
+    return res.status(500).json({ error: "AI 服务未初始化" });
+  }
+
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { text, prompt, dateStr } = req.method === 'GET' ? req.query : req.body;
+  const params = req.method === 'GET' ? req.query : (typeof req.body === 'string' ? JSON.parse(req.body) : req.body);
+  const { text, prompt, dateStr } = params || {};
   const inputContent = text || prompt || buildNewsPrompt(dateStr);
 
   if (!inputContent) {
@@ -110,13 +125,17 @@ async function handleTextGeneration(req: any, res: any) {
 /**
  * 处理语音合成
  */
-async function handleSpeechSynthesis(req: any, res: any) {
+async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGenAI | null) {
+  if (!genAIModality) {
+    return res.status(500).json({ error: "TTS 服务未初始化" });
+  }
+
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const params = req.method === 'GET' ? req.query : req.body;
-  const { text, voice = 'female' } = params;
+  const params = req.method === 'GET' ? req.query : (typeof req.body === 'string' ? JSON.parse(req.body) : req.body);
+  const { text, voice = 'female' } = params || {};
 
   if (!text) {
     return res.status(400).json({ error: "Missing text in request" });
@@ -188,13 +207,17 @@ async function handleSpeechSynthesis(req: any, res: any) {
 /**
  * 处理图片生成（生成提示词）
  */
-async function handleImageGeneration(req: any, res: any) {
+async function handleImageGeneration(req: any, res: any, genAI: GoogleGenerativeAI | null) {
+  if (!genAI) {
+    return res.status(500).json({ error: "AI 服务未初始化" });
+  }
+
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const params = req.method === 'GET' ? req.query : req.body;
-  const { headline } = params;
+  const params = req.method === 'GET' ? req.query : (typeof req.body === 'string' ? JSON.parse(req.body) : req.body);
+  const { headline } = params || {};
 
   if (!headline) {
     return res.status(400).json({ error: "Missing headline in request" });
