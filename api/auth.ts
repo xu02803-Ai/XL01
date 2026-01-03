@@ -66,6 +66,10 @@ export default async function handler(req: any, res: any) {
     return handleLogin(req, res);
   }
 
+  if (req.method === 'POST' && action === 'debug-user') {
+    return debugUser(req, res);
+  }
+
   if (req.method === 'GET') {
     return res.status(200).json({ 
       success: true,
@@ -75,6 +79,52 @@ export default async function handler(req: any, res: any) {
   }
 
   res.status(400).json({ error: 'Invalid request' });
+}
+
+async function debugUser(req: any, res: any) {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: 'Email required' });
+    }
+
+    console.log('🔍 Debugging user:', email);
+
+    // Check if user exists in Auth
+    const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+    
+    if (authError) {
+      return res.status(500).json({ error: 'Failed to list auth users', debug: authError.message });
+    }
+
+    const authUser = authUsers?.users?.find(u => u.email === email);
+    
+    // Check if user exists in public.users
+    const { data: publicUser, error: publicError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .limit(1)
+      .single();
+
+    res.status(200).json({
+      success: true,
+      debug: {
+        email,
+        authUser: authUser ? {
+          id: authUser.id,
+          email: authUser.email,
+          email_confirmed_at: authUser.email_confirmed_at,
+          last_sign_in_at: authUser.last_sign_in_at,
+          user_metadata: authUser.user_metadata,
+        } : 'NOT FOUND IN AUTH',
+        publicUser: publicUser || 'NOT FOUND IN PUBLIC.USERS',
+        publicError: publicError?.message || null,
+      },
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
 }
 
 async function handleRegister(req: any, res: any) {
@@ -158,8 +208,17 @@ async function handleRegister(req: any, res: any) {
       // Don't fail registration if subscription fails
     }
 
-    // Generate session JWT (use Supabase's JWT)
-    const token = authUser.user.new_confirmation_token || '';
+    console.log('🔑 Generating JWT token');
+    // Generate JWT token for immediate use
+    const token = jwt.sign(
+      { 
+        id: authUser.user.id, 
+        email: authUser.user.email,
+        email_confirmed_at: authUser.user.email_confirmed_at,
+      },
+      jwtSecret,
+      { expiresIn: '30d' }
+    );
 
     console.log('✅ Registration successful');
     res.status(201).json({
@@ -169,7 +228,8 @@ async function handleRegister(req: any, res: any) {
         email: authUser.user.email,
         username,
       },
-      message: 'Registration successful. Please verify your email.',
+      token,
+      message: 'Registration successful. You can now login.',
     });
   } catch (error: any) {
     console.error('❌ Registration error:', error);
@@ -187,7 +247,7 @@ async function handleLogin(req: any, res: any) {
       return res.status(400).json({ error: 'Missing email or password' });
     }
 
-    console.log('� Authenticating with Supabase Auth');
+    console.log('🔑 Authenticating with Supabase Auth');
     // Use Supabase Auth to verify credentials (handles password comparison securely)
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
@@ -195,12 +255,33 @@ async function handleLogin(req: any, res: any) {
     });
 
     if (authError) {
-      console.warn('❌ Auth error:', authError.message);
-      return res.status(401).json({ error: 'Invalid credentials' });
+      console.warn('❌ Auth error:', {
+        message: authError.message,
+        status: authError.status,
+      });
+      
+      // Provide more specific error messages
+      if (authError.message.includes('Invalid login credentials')) {
+        return res.status(401).json({ 
+          error: 'Invalid email or password',
+          debug: 'User not found or password incorrect'
+        });
+      }
+      
+      return res.status(401).json({ 
+        error: 'Invalid credentials',
+        debug: authError.message
+      });
+    }
+
+    if (!authData || !authData.user) {
+      console.warn('❌ No user data returned from auth');
+      return res.status(401).json({ error: 'Invalid credentials - no user data' });
     }
 
     const authUser = authData.user;
     console.log('✅ User authenticated:', authUser.id);
+    console.log('👤 User email confirmed:', authUser.email_confirmed_at);
 
     console.log('📋 Fetching user profile');
     // Get user profile
