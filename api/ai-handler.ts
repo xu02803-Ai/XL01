@@ -94,17 +94,17 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
       error.message?.includes('rate limit');
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.0 版本额度用尽，正在自动切换到 1.5 Flash...");
+      console.warn("⚠️ 2.0 Flash Exp 额度用尽，正在尝试 Gemini 2.0 Pro...");
 
       try {
-        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model15 = genAI.getGenerativeModel({ model: "gemini-2.0-pro-exp" });
         const result15 = await model15.generateContent(inputContent);
         const response15 = await result15.response;
 
         return res.status(200).json({
           success: true,
-          data: result15.text(),
-          model: "gemini-1.5-flash (Fallback)"
+          data: response15.text(),
+          model: "gemini-2.0-pro-exp (Fallback)"
         });
       } catch (fallbackError: any) {
         return res.status(500).json({
@@ -143,8 +143,8 @@ async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGe
 
   // TTS 模型列表
   const ttsModels = [
-    'gemini-2.0-flash-exp',         // 优先尝试稳定版本
-    'gemini-1.5-flash',             // 降级方案
+    'gemini-2.0-flash-exp',         // 优先版本
+    'gemini-2.0-pro-exp',           // 降级方案
   ];
 
   for (const modelId of ttsModels) {
@@ -253,10 +253,10 @@ Return ONLY the image prompt, no additional text.`;
       error.message?.includes('RESOURCE_EXHAUSTED');
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.0 配额用尽，使用 1.5 Flash...");
+      console.warn("⚠️ 2.0 Flash Exp 配额用尽，使用 Gemini 2.0 Pro...");
 
       try {
-        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model15 = genAI.getGenerativeModel({ model: "gemini-2.0-pro-exp" });
         const result15 = await model15.generateContent(prompt);
         const response15 = await result15.response;
         const imagePrompt = response15.text();
@@ -268,7 +268,7 @@ Return ONLY the image prompt, no additional text.`;
           prompt: imagePrompt,
           imageUrl: imageUrl,
           isUrl: true,
-          model: "gemini-1.5-flash (Fallback)"
+          model: "gemini-2.0-pro-exp (Fallback)"
         });
       } catch (fallbackError: any) {
         return res.status(500).json({
