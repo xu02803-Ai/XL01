@@ -73,17 +73,17 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
   }
 
   try {
-    console.log("🚀 尝试使用 Gemini 2.0 Flash...");
+    console.log("🚀 尝试使用 Gemini 2.5 Flash...");
 
-    // 尝试使用 2.0 版本稳定版
-    const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    const result = await model20.generateContent(inputContent);
+    // 优先使用 Gemini 2.5（最新最强）
+    const model25 = genAI.getGenerativeModel({ model: "gemini-2.5-flash-001" });
+    const result = await model25.generateContent(inputContent);
     const response = await result.response;
 
     return res.status(200).json({
       success: true,
       data: response.text(),
-      model: "gemini-2.0-flash"
+      model: "gemini-2.5-flash-001"
     });
 
   } catch (error: any) {
@@ -91,25 +91,26 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
     const isQuotaExceeded = error.message?.includes('429') ||
       error.message?.includes('quota') ||
       error.message?.includes('RESOURCE_EXHAUSTED') ||
-      error.message?.includes('rate limit');
+      error.message?.includes('rate limit') ||
+      error.message?.includes('404');
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.0 Flash 额度用尽，正在尝试 Gemini 1.5 Flash...");
+      console.warn("⚠️ 2.5 Flash 额度用尽，正在尝试 Gemini 2.0 Flash...");
 
       try {
-        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result15 = await model15.generateContent(inputContent);
-        const response15 = await result15.response;
+        const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const result20 = await model20.generateContent(inputContent);
+        const response20 = await result20.response;
 
         return res.status(200).json({
           success: true,
-          data: response15.text(),
-          model: "gemini-1.5-flash (Fallback)"
+          data: response20.text(),
+          model: "gemini-2.0-flash (Fallback)"
         });
-      } catch (fallbackError: any) {
+      } catch (fallbackError2: any) {
         return res.status(500).json({
-          error: "所有文本生成通道均不可用",
-          details: fallbackError.message
+          error: "所有文本生成通道均不可用（2.5 和 2.0 都已达到配额）",
+          details: fallbackError2.message
         });
       }
     }
@@ -143,8 +144,8 @@ async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGe
 
   // TTS 模型列表
   const ttsModels = [
-    'gemini-2.0-flash',             // 优先版本
-    'gemini-1.5-flash',             // 降级方案
+    'gemini-2.5-flash-001',         // 优先版本
+    'gemini-2.0-flash',             // 降级版本
   ];
 
   for (const modelId of ttsModels) {
@@ -230,7 +231,7 @@ Return ONLY the image prompt, no additional text.`;
   try {
     console.log("🖼️ 正在生成图片提示词...");
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-001" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const imagePrompt = response.text();
@@ -243,7 +244,7 @@ Return ONLY the image prompt, no additional text.`;
       prompt: imagePrompt,
       imageUrl: imageUrl,
       isUrl: true,
-      model: "gemini-2.0-flash"
+      model: "gemini-2.5-flash-001"
     });
 
   } catch (error: any) {
@@ -253,13 +254,13 @@ Return ONLY the image prompt, no additional text.`;
       error.message?.includes('RESOURCE_EXHAUSTED');
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.0 Flash 配额用尽，使用 Gemini 1.5 Flash...");
+      console.warn("⚠️ 2.5 Flash 配额用尽，尝试 Gemini 2.0 Flash...");
 
       try {
-        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const result15 = await model15.generateContent(prompt);
-        const response15 = await result15.response;
-        const imagePrompt = response15.text();
+        const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const result20 = await model20.generateContent(prompt);
+        const response20 = await result20.response;
+        let imagePrompt = response20.text();
 
         const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}`;
 
@@ -268,7 +269,7 @@ Return ONLY the image prompt, no additional text.`;
           prompt: imagePrompt,
           imageUrl: imageUrl,
           isUrl: true,
-          model: "gemini-1.5-flash (Fallback)"
+          model: "gemini-2.0-flash (Fallback)"
         });
       } catch (fallbackError: any) {
         return res.status(500).json({
