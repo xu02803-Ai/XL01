@@ -73,17 +73,17 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
   }
 
   try {
-    console.log("🚀 尝试使用 Gemini 2.0 Flash Exp (优先版本)...");
+    console.log("🚀 尝试使用 Gemini 2.0 Flash...");
 
-    // 尝试使用 2.0 版本（目前 2.5 的模型名称可能变化，使用 2.0 稳定版）
-    const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    // 尝试使用 2.0 版本稳定版
+    const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model20.generateContent(inputContent);
     const response = await result.response;
 
     return res.status(200).json({
       success: true,
       data: response.text(),
-      model: "gemini-2.0-flash-exp"
+      model: "gemini-2.0-flash"
     });
 
   } catch (error: any) {
@@ -94,17 +94,17 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
       error.message?.includes('rate limit');
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.0 Flash Exp 额度用尽，正在尝试 Gemini 2.0 Pro...");
+      console.warn("⚠️ 2.0 Flash 额度用尽，正在尝试 Gemini 1.5 Flash...");
 
       try {
-        const model15 = genAI.getGenerativeModel({ model: "gemini-2.0-pro-exp" });
+        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result15 = await model15.generateContent(inputContent);
         const response15 = await result15.response;
 
         return res.status(200).json({
           success: true,
           data: response15.text(),
-          model: "gemini-2.0-pro-exp (Fallback)"
+          model: "gemini-1.5-flash (Fallback)"
         });
       } catch (fallbackError: any) {
         return res.status(500).json({
@@ -143,8 +143,8 @@ async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGe
 
   // TTS 模型列表
   const ttsModels = [
-    'gemini-2.0-flash-exp',         // 优先版本
-    'gemini-2.0-pro-exp',           // 降级方案
+    'gemini-2.0-flash',             // 优先版本
+    'gemini-1.5-flash',             // 降级方案
   ];
 
   for (const modelId of ttsModels) {
@@ -230,7 +230,7 @@ Return ONLY the image prompt, no additional text.`;
   try {
     console.log("🖼️ 正在生成图片提示词...");
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const imagePrompt = response.text();
@@ -243,7 +243,7 @@ Return ONLY the image prompt, no additional text.`;
       prompt: imagePrompt,
       imageUrl: imageUrl,
       isUrl: true,
-      model: "gemini-2.0-flash-exp"
+      model: "gemini-2.0-flash"
     });
 
   } catch (error: any) {
@@ -253,10 +253,10 @@ Return ONLY the image prompt, no additional text.`;
       error.message?.includes('RESOURCE_EXHAUSTED');
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.0 Flash Exp 配额用尽，使用 Gemini 2.0 Pro...");
+      console.warn("⚠️ 2.0 Flash 配额用尽，使用 Gemini 1.5 Flash...");
 
       try {
-        const model15 = genAI.getGenerativeModel({ model: "gemini-2.0-pro-exp" });
+        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result15 = await model15.generateContent(prompt);
         const response15 = await result15.response;
         const imagePrompt = response15.text();
@@ -268,7 +268,7 @@ Return ONLY the image prompt, no additional text.`;
           prompt: imagePrompt,
           imageUrl: imageUrl,
           isUrl: true,
-          model: "gemini-2.0-pro-exp (Fallback)"
+          model: "gemini-1.5-flash (Fallback)"
         });
       } catch (fallbackError: any) {
         return res.status(500).json({
