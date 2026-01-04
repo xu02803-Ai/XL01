@@ -94,17 +94,17 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
       error.message?.includes('rate limit');
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.0 版本额度用尽，正在自动切换到 1.5 Flash Latest...");
+      console.warn("⚠️ 2.0 版本额度用尽，正在自动切换到 1.5 Flash...");
 
       try {
-        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result15 = await model15.generateContent(inputContent);
         const response15 = await result15.response;
 
         return res.status(200).json({
           success: true,
-          data: response15.text(),
-          model: "gemini-1.5-flash-latest (Fallback)"
+          data: result15.text(),
+          model: "gemini-1.5-flash (Fallback)"
         });
       } catch (fallbackError: any) {
         return res.status(500).json({
@@ -144,7 +144,7 @@ async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGe
   // TTS 模型列表
   const ttsModels = [
     'gemini-2.0-flash-exp',         // 优先尝试稳定版本
-    'gemini-1.5-flash-latest',      // 降级方案
+    'gemini-1.5-flash',             // 降级方案
   ];
 
   for (const modelId of ttsModels) {
@@ -253,10 +253,10 @@ Return ONLY the image prompt, no additional text.`;
       error.message?.includes('RESOURCE_EXHAUSTED');
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.5 配额用尽，使用 1.5 Flash...");
+      console.warn("⚠️ 2.0 配额用尽，使用 1.5 Flash...");
 
       try {
-        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        const model15 = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const result15 = await model15.generateContent(prompt);
         const response15 = await result15.response;
         const imagePrompt = response15.text();
@@ -268,7 +268,7 @@ Return ONLY the image prompt, no additional text.`;
           prompt: imagePrompt,
           imageUrl: imageUrl,
           isUrl: true,
-          model: "gemini-1.5-flash-latest (Fallback)"
+          model: "gemini-1.5-flash (Fallback)"
         });
       } catch (fallbackError: any) {
         return res.status(500).json({
