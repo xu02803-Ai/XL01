@@ -108,10 +108,24 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
           model: "gemini-2.0-flash (Fallback)"
         });
       } catch (fallbackError2: any) {
-        return res.status(500).json({
-          error: "所有文本生成通道均不可用（2.5 和 2.0 都已达到配额）",
-          details: fallbackError2.message
-        });
+        // 2.0 也失败，尝试 2.0 Flash-Lite
+        console.warn("⚠️ 2.0 Flash 配额用尽，尝试 Gemini 2.0 Flash-Lite...");
+        try {
+          const modelLite = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+          const resultLite = await modelLite.generateContent(inputContent);
+          const responseLite = await resultLite.response;
+
+          return res.status(200).json({
+            success: true,
+            data: responseLite.text(),
+            model: "gemini-2.0-flash-lite (Final Fallback)"
+          });
+        } catch (fallbackError3: any) {
+          return res.status(500).json({
+            error: "所有文本生成通道均不可用（2.5、2.0 和 Lite 都已达到配额）",
+            details: fallbackError3.message
+          });
+        }
       }
     }
 
@@ -145,7 +159,8 @@ async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGe
   // TTS 模型列表
   const ttsModels = [
     'gemini-2.5-flash-001',         // 优先版本
-    'gemini-2.0-flash',             // 降级版本
+    'gemini-2.0-flash',             // 次级降级
+    'gemini-2.0-flash-lite',        // 保底模型
   ];
 
   for (const modelId of ttsModels) {
@@ -271,11 +286,30 @@ Return ONLY the image prompt, no additional text.`;
           isUrl: true,
           model: "gemini-2.0-flash (Fallback)"
         });
-      } catch (fallbackError: any) {
-        return res.status(500).json({
-          error: "图片提示词生成失败",
-          details: fallbackError.message
-        });
+      } catch (fallbackError2: any) {
+        // 2.0 也失败，尝试 2.0 Flash-Lite
+        console.warn("⚠️ 2.0 Flash 配额用尽，尝试 Gemini 2.0 Flash-Lite...");
+        try {
+          const modelLite = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+          const resultLite = await modelLite.generateContent(prompt);
+          const responseLite = await resultLite.response;
+          let imageLitePrompt = responseLite.text();
+
+          const imageLiteUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imageLitePrompt)}`;
+
+          return res.status(200).json({
+            success: true,
+            prompt: imageLitePrompt,
+            imageUrl: imageLiteUrl,
+            isUrl: true,
+            model: "gemini-2.0-flash-lite (Final Fallback)"
+          });
+        } catch (fallbackError3: any) {
+          return res.status(500).json({
+            error: "图片提示词生成失败（所有模型都已达到配额）",
+            details: fallbackError3.message
+          });
+        }
       }
     }
 
