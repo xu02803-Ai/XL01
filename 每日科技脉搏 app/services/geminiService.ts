@@ -142,15 +142,53 @@ export const generateNewsImage = async (headline: string): Promise<string | null
 };
 
 // --- Audio Generation (TTS) ---
-// Note: TTS functionality has been migrated to use alternative services.
-// If needed, use text-to-speech services like:
-// - Web Speech API (Browser native)
-// - ElevenLabs API
-// - Azure Speech Service
-// - Google Cloud Text-to-Speech
 
 export const generateNewsAudio = async (text: string, voice: 'Male' | 'Female'): Promise<ArrayBuffer | null> => {
-  console.warn("TTS support has been removed. Please use alternative services.");
+  const MAX_RETRIES = 3;
+  const token = getAuthToken();
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(`/api/ai-handler?action=speech&text=${encodeURIComponent(text)}&voice=${voice}`, {
+        method: 'GET',
+        headers: token ? {
+          'Authorization': `Bearer ${token}`,
+        } : {},
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.error || "Audio generation failed");
+      }
+
+      if (!data.data) {
+        throw new Error("No audio data in response");
+      }
+
+      // Decode Base64 to ArrayBuffer
+      const binaryString = atob(data.data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return bytes.buffer;
+
+    } catch (e) {
+      console.warn(`TTS generation failed (Attempt ${attempt}/${MAX_RETRIES})`, e);
+      if (attempt < MAX_RETRIES) {
+        await sleep(500 * attempt);
+      } else {
+        console.error("All TTS attempts failed.");
+        return null;
+      }
+    }
+  }
   return null;
 };
 
