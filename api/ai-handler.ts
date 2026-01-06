@@ -1,10 +1,7 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { GoogleGenAI, Modality } from "@google/genai";
-
+// DeepSeek API 配置
 // 确保环境变量存在，否则提前报错，方便排查
-const apiKey = process.env.GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-const genAIModality = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
+const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 
 export default async function handler(req: any, res: any) {
   // 处理跨域
@@ -15,9 +12,9 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   // 1. 基础环境检查
-  if (!genAI || !genAIModality) {
-    console.error("❌ 服务器未配置 GEMINI_API_KEY");
-    return res.status(500).json({ error: "服务器未配置 GEMINI_API_KEY" });
+  if (!deepseekApiKey) {
+    console.error("❌ 服务器未配置 DEEPSEEK_API_KEY");
+    return res.status(500).json({ error: "服务器未配置 DEEPSEEK_API_KEY" });
   }
 
   try {
@@ -28,23 +25,19 @@ export default async function handler(req: any, res: any) {
     switch (action) {
       case 'text':
       case 'generate-text':
-        return handleTextGeneration(req, res, genAI);
-
-      case 'speech':
-      case 'synthesize-speech':
-        return handleSpeechSynthesis(req, res, genAIModality);
+        return handleTextGeneration(req, res, deepseekApiKey);
 
       case 'image':
       case 'generate-image':
-        return handleImageGeneration(req, res, genAI);
+        return handleImageGeneration(req, res, deepseekApiKey);
 
       default:
         // 默认行为：如果有 text 字段则生成文本
         const body_check = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
         if (body_check?.text || req.query?.text) {
-          return handleTextGeneration(req, res, genAI);
+          return handleTextGeneration(req, res, deepseekApiKey);
         }
-        return res.status(400).json({ error: "Missing action parameter. Use ?action=text|speech|image" });
+        return res.status(400).json({ error: "Missing action parameter. Use ?action=text|image" });
     }
   } catch (error: any) {
     console.error("❌ AI Handler Error:", error.message);
@@ -55,8 +48,8 @@ export default async function handler(req: any, res: any) {
 /**
  * 处理文本生成（新闻、内容等）
  */
-async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeAI | null) {
-  if (!genAI) {
+async function handleTextGeneration(req: any, res: any, apiKey: string) {
+  if (!apiKey) {
     return res.status(500).json({ error: "AI 服务未初始化" });
   }
 
@@ -73,59 +66,40 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
   }
 
   try {
-    console.log("🚀 尝试使用 Gemini 2.5 Flash...");
+    console.log("🚀 尝试使用 DeepSeek Chat (V3)...");
 
-    // 优先使用 Gemini 2.5（最新最强）
-    const model25 = genAI.getGenerativeModel({ model: "gemini-2.5-flash-001" });
-    const result = await model25.generateContent(inputContent);
-    const response = await result.response;
-
+    // 使用 DeepSeek Chat 模型
+    const response = await callDeepSeekAPI(apiKey, inputContent, "deepseek-chat");
+    
     return res.status(200).json({
       success: true,
-      data: response.text(),
-      model: "gemini-2.5-flash-001"
+      data: response,
+      model: "deepseek-chat"
     });
 
   } catch (error: any) {
-    // 核心逻辑：检测是否为配额错误
+    // 检测是否为配额或速率限制错误
     const isQuotaExceeded = error.message?.includes('429') ||
       error.message?.includes('quota') ||
-      error.message?.includes('RESOURCE_EXHAUSTED') ||
       error.message?.includes('rate limit') ||
-      error.message?.includes('404');
+      error.status === 429;
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.5 Flash 额度用尽，正在尝试 Gemini 2.0 Flash...");
+      console.warn("⚠️ DeepSeek Chat 配额用尽或速率限制，尝试 DeepSeek Reasoner...");
 
       try {
-        const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        const result20 = await model20.generateContent(inputContent);
-        const response20 = await result20.response;
-
+        const response = await callDeepSeekAPI(apiKey, inputContent, "deepseek-reasoner");
+        
         return res.status(200).json({
           success: true,
-          data: response20.text(),
-          model: "gemini-2.0-flash (Fallback)"
+          data: response,
+          model: "deepseek-reasoner (Fallback)"
         });
-      } catch (fallbackError2: any) {
-        // 2.0 也失败，尝试 2.0 Flash-Lite
-        console.warn("⚠️ 2.0 Flash 配额用尽，尝试 Gemini 2.0 Flash-Lite...");
-        try {
-          const modelLite = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
-          const resultLite = await modelLite.generateContent(inputContent);
-          const responseLite = await resultLite.response;
-
-          return res.status(200).json({
-            success: true,
-            data: responseLite.text(),
-            model: "gemini-2.0-flash-lite (Final Fallback)"
-          });
-        } catch (fallbackError3: any) {
-          return res.status(500).json({
-            error: "所有文本生成通道均不可用（2.5、2.0 和 Lite 都已达到配额）",
-            details: fallbackError3.message
-          });
-        }
+      } catch (fallbackError: any) {
+        return res.status(500).json({
+          error: "所有文本生成通道均不可用",
+          details: fallbackError.message
+        });
       }
     }
 
@@ -138,93 +112,50 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
 }
 
 /**
- * 处理语音合成
+ * 调用 DeepSeek API
  */
-async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGenAI | null) {
-  if (!genAIModality) {
-    return res.status(500).json({ error: "TTS 服务未初始化" });
-  }
-
-  if (req.method !== 'GET' && req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const params = req.method === 'GET' ? req.query : (typeof req.body === 'string' ? JSON.parse(req.body) : req.body);
-  const { text, voice = 'female' } = params || {};
-
-  if (!text) {
-    return res.status(400).json({ error: "Missing text in request" });
-  }
-
-  // TTS 模型列表
-  const ttsModels = [
-    'gemini-2.5-flash-001',         // 优先版本
-    'gemini-2.0-flash',             // 次级降级
-    'gemini-2.0-flash-lite',        // 保底模型
-  ];
-
-  for (const modelId of ttsModels) {
-    try {
-      console.log(`🎙️ 尝试语音合成，模型: ${modelId}, 声音: ${voice}`);
-
-      const response = await genAIModality.models.generateContent({
-        model: modelId,
-        contents: [{
+async function callDeepSeekAPI(apiKey: string, prompt: string, model: "deepseek-chat" | "deepseek-reasoner"): Promise<string> {
+  const response = await fetch(DEEPSEEK_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        {
           role: "user",
-          parts: [{ text }]
-        }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: voice
-              }
-            }
-          }
+          content: prompt
         }
-      } as any);
+      ],
+      temperature: 1,
+      max_tokens: model === "deepseek-reasoner" ? 8000 : 4000,
+      ...(model === "deepseek-reasoner" && { 
+        thinking: { 
+          type: "enabled",
+          budget_tokens: 4000
+        }
+      })
+    })
+  });
 
-      const part = response.candidates?.[0]?.content?.parts?.[0];
-
-      if (part && "inlineData" in part && part.inlineData) {
-        console.log(`✅ 语音合成成功，使用模型 ${modelId}`);
-        return res.status(200).json({
-          success: true,
-          data: part.inlineData.data,
-          mimeType: part.inlineData.mimeType || 'audio/mpeg',
-          model: modelId
-        });
-      }
-
-    } catch (error: any) {
-      const errorMsg = error.message || String(error);
-      console.warn(`⚠️ 模型 ${modelId} 失败:`, errorMsg);
-
-      // 检查是否为配额错误
-      if (errorMsg.includes('RESOURCE_EXHAUSTED') ||
-        errorMsg.includes('quota') ||
-        errorMsg.includes('429')) {
-        console.warn(`🔄 ${modelId} 配额已用，尝试降级...`);
-        continue;
-      }
-
-      // 其他错误也继续尝试下一个模型
-      continue;
-    }
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: response.statusText }));
+    const error: any = new Error(errorData.error?.message || response.statusText);
+    error.status = response.status;
+    throw error;
   }
 
-  return res.status(500).json({
-    error: "所有语音合成通道均不可用",
-    details: "没有可用的 TTS 模型"
-  });
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || "";
 }
 
 /**
  * 处理图片生成（生成提示词）
  */
-async function handleImageGeneration(req: any, res: any, genAI: GoogleGenerativeAI | null) {
-  if (!genAI) {
+async function handleImageGeneration(req: any, res: any, apiKey: string) {
+  if (!apiKey) {
     return res.status(500).json({ error: "AI 服务未初始化" });
   }
 
@@ -246,10 +177,7 @@ Return ONLY the image prompt, no additional text.`;
   try {
     console.log("🖼️ 正在生成图片提示词...");
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-001" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const imagePrompt = response.text();
+    const imagePrompt = await callDeepSeekAPI(apiKey, prompt, "deepseek-chat");
 
     // 使用免费的图片生成服务
     const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}`;
@@ -259,23 +187,20 @@ Return ONLY the image prompt, no additional text.`;
       prompt: imagePrompt,
       imageUrl: imageUrl,
       isUrl: true,
-      model: "gemini-2.5-flash-001"
+      model: "deepseek-chat"
     });
 
   } catch (error: any) {
     // 检测配额错误
     const isQuotaExceeded = error.message?.includes('429') ||
       error.message?.includes('quota') ||
-      error.message?.includes('RESOURCE_EXHAUSTED');
+      error.status === 429;
 
     if (isQuotaExceeded) {
-      console.warn("⚠️ 2.5 Flash 配额用尽，尝试 Gemini 2.0 Flash...");
+      console.warn("⚠️ DeepSeek Chat 配额用尽，尝试 DeepSeek Reasoner...");
 
       try {
-        const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        const result20 = await model20.generateContent(prompt);
-        const response20 = await result20.response;
-        let imagePrompt = response20.text();
+        const imagePrompt = await callDeepSeekAPI(apiKey, prompt, "deepseek-reasoner");
 
         const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}`;
 
@@ -284,32 +209,13 @@ Return ONLY the image prompt, no additional text.`;
           prompt: imagePrompt,
           imageUrl: imageUrl,
           isUrl: true,
-          model: "gemini-2.0-flash (Fallback)"
+          model: "deepseek-reasoner (Fallback)"
         });
-      } catch (fallbackError2: any) {
-        // 2.0 也失败，尝试 2.0 Flash-Lite
-        console.warn("⚠️ 2.0 Flash 配额用尽，尝试 Gemini 2.0 Flash-Lite...");
-        try {
-          const modelLite = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
-          const resultLite = await modelLite.generateContent(prompt);
-          const responseLite = await resultLite.response;
-          let imageLitePrompt = responseLite.text();
-
-          const imageLiteUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imageLitePrompt)}`;
-
-          return res.status(200).json({
-            success: true,
-            prompt: imageLitePrompt,
-            imageUrl: imageLiteUrl,
-            isUrl: true,
-            model: "gemini-2.0-flash-lite (Final Fallback)"
-          });
-        } catch (fallbackError3: any) {
-          return res.status(500).json({
-            error: "图片提示词生成失败（所有模型都已达到配额）",
-            details: fallbackError3.message
-          });
-        }
+      } catch (fallbackError: any) {
+        return res.status(500).json({
+          error: "图片提示词生成失败",
+          details: fallbackError.message
+        });
       }
     }
 
