@@ -20,6 +20,30 @@ interface OAuthToken {
   expires_in?: number;
 }
 
+interface GoogleTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+}
+
+interface GitHubTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+}
+
+interface DiscordTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+}
+
 interface GoogleUserInfo {
   id: string;
   email: string;
@@ -231,7 +255,7 @@ async function handleGoogleCallback(code: string) {
     throw new Error('Failed to exchange Google authorization code');
   }
 
-  const tokens = await tokenResponse.json();
+  const tokens = (await tokenResponse.json()) as GoogleTokenResponse;
 
   // 获取用户信息
   const userResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -283,7 +307,7 @@ async function handleGithubCallback(code: string) {
     throw new Error('Failed to exchange GitHub authorization code');
   }
 
-  const tokens = await tokenResponse.json();
+  const tokens = (await tokenResponse.json()) as GitHubTokenResponse;
 
   // 获取用户信息
   const userResponse = await fetch('https://api.github.com/user', {
@@ -336,7 +360,7 @@ async function handleDiscordCallback(code: string) {
     throw new Error('Failed to exchange Discord authorization code');
   }
 
-  const tokens = await tokenResponse.json();
+  const tokens = (await tokenResponse.json()) as DiscordTokenResponse;
 
   // 获取用户信息
   const userResponse = await fetch('https://discord.com/api/users/@me', {
