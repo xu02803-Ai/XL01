@@ -1,10 +1,25 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { GoogleGenAI, Modality } from "@google/genai";
+import axios from 'axios';
 
 // 确保环境变量存在，否则提前报错，方便排查
-const apiKey = process.env.GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-const genAIModality = apiKey ? new GoogleGenAI({ apiKey }) : null;
+const qwenApiKey = process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY;
+
+// 千问API端点
+const QWEN_TEXT_API = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
+const QWEN_TTS_API = 'https://dashscope.aliyuncs.com/api/v1/services/tts/text-to-speech';
+
+// 千问模型列表 - 性价比优化版本
+// 文本生成：优先使用免费/低价模型
+const QWEN_TEXT_MODELS = [
+  'qwen-plus',          // 性价比最高，主要推荐（0.8元/百万tokens）
+  'qwen-turbo',         // 次级快速模型（1.5元/百万tokens）
+  'qwen-coder-plus',    // 代码和通用文本（1.5元/百万tokens）
+];
+
+// 语音合成：使用免费的 sambert 模型族
+const QWEN_TTS_MODELS = [
+  'sambert-zhichu-v1',  // 免费中文语音合成模型 ✅
+  'cosyvoice-v1',       // 付费高质量备选（需付费）
+];
 
 export default async function handler(req: any, res: any) {
   // 处理跨域
@@ -15,9 +30,9 @@ export default async function handler(req: any, res: any) {
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   // 1. 基础环境检查
-  if (!genAI || !genAIModality) {
-    console.error("❌ 服务器未配置 GEMINI_API_KEY");
-    return res.status(500).json({ error: "服务器未配置 GEMINI_API_KEY" });
+  if (!qwenApiKey) {
+    console.error("❌ 服务器未配置 QWEN_API_KEY 或 DASHSCOPE_API_KEY");
+    return res.status(500).json({ error: "服务器未配置 QWEN_API_KEY" });
   }
 
   try {
@@ -28,21 +43,21 @@ export default async function handler(req: any, res: any) {
     switch (action) {
       case 'text':
       case 'generate-text':
-        return handleTextGeneration(req, res, genAI);
+        return handleTextGeneration(req, res);
 
       case 'speech':
       case 'synthesize-speech':
-        return handleSpeechSynthesis(req, res, genAIModality);
+        return handleSpeechSynthesis(req, res);
 
       case 'image':
       case 'generate-image':
-        return handleImageGeneration(req, res, genAI);
+        return handleImageGeneration(req, res);
 
       default:
         // 默认行为：如果有 text 字段则生成文本
         const body_check = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
         if (body_check?.text || req.query?.text) {
-          return handleTextGeneration(req, res, genAI);
+          return handleTextGeneration(req, res);
         }
         return res.status(400).json({ error: "Missing action parameter. Use ?action=text|speech|image" });
     }
@@ -55,11 +70,7 @@ export default async function handler(req: any, res: any) {
 /**
  * 处理文本生成（新闻、内容等）
  */
-async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeAI | null) {
-  if (!genAI) {
-    return res.status(500).json({ error: "AI 服务未初始化" });
-  }
-
+async function handleTextGeneration(req: any, res: any) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -72,79 +83,76 @@ async function handleTextGeneration(req: any, res: any, genAI: GoogleGenerativeA
     return res.status(400).json({ error: "Missing content/prompt in request" });
   }
 
-  try {
-    console.log("🚀 尝试使用 Gemini 2.5 Flash...");
+  // 尝试所有可用的千问模型
+  for (const modelId of QWEN_TEXT_MODELS) {
+    try {
+      console.log(`🚀 尝试使用千问模型: ${modelId}...`);
 
-    // 优先使用 Gemini 2.5（最新最强）
-    const model25 = genAI.getGenerativeModel({ model: "gemini-2.5-flash-001" });
-    const result = await model25.generateContent(inputContent);
-    const response = await result.response;
+      const response = await axios.post(
+        QWEN_TEXT_API,
+        {
+          model: modelId,
+          messages: [
+            {
+              role: 'user',
+              content: inputContent
+            }
+          ],
+          parameters: {
+            max_tokens: 2000,
+            temperature: 0.7,
+            top_p: 0.8
+          }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${qwenApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      );
 
-    return res.status(200).json({
-      success: true,
-      data: response.text(),
-      model: "gemini-2.5-flash-001"
-    });
-
-  } catch (error: any) {
-    // 核心逻辑：检测是否为配额错误
-    const isQuotaExceeded = error.message?.includes('429') ||
-      error.message?.includes('quota') ||
-      error.message?.includes('RESOURCE_EXHAUSTED') ||
-      error.message?.includes('rate limit') ||
-      error.message?.includes('404');
-
-    if (isQuotaExceeded) {
-      console.warn("⚠️ 2.5 Flash 额度用尽，正在尝试 Gemini 2.0 Flash...");
-
-      try {
-        const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        const result20 = await model20.generateContent(inputContent);
-        const response20 = await result20.response;
-
-        return res.status(200).json({
-          success: true,
-          data: response20.text(),
-          model: "gemini-2.0-flash (Fallback)"
-        });
-      } catch (fallbackError2: any) {
-        // 2.0 也失败，尝试 2.0 Flash-Lite
-        console.warn("⚠️ 2.0 Flash 配额用尽，尝试 Gemini 2.0 Flash-Lite...");
-        try {
-          const modelLite = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
-          const resultLite = await modelLite.generateContent(inputContent);
-          const responseLite = await resultLite.response;
-
+      const result = response.data;
+      if (result.code === 200 || result.status_code === '200' || !result.code) {
+        const textContent = result.output?.text || result.result?.output?.text || '';
+        if (textContent) {
+          console.log(`✅ 文本生成成功，使用模型: ${modelId}`);
           return res.status(200).json({
             success: true,
-            data: responseLite.text(),
-            model: "gemini-2.0-flash-lite (Final Fallback)"
-          });
-        } catch (fallbackError3: any) {
-          return res.status(500).json({
-            error: "所有文本生成通道均不可用（2.5、2.0 和 Lite 都已达到配额）",
-            details: fallbackError3.message
+            data: textContent,
+            model: modelId
           });
         }
       }
-    }
+    } catch (error: any) {
+      const errorMsg = error.message || String(error);
+      console.warn(`⚠️ 模型 ${modelId} 失败:`, errorMsg);
 
-    // 其他错误
-    return res.status(500).json({
-      error: "文本生成服务调用失败",
-      details: error.message
-    });
+      // 检查是否为配额或速率限制错误
+      if (errorMsg.includes('rate_limit') ||
+        errorMsg.includes('429') ||
+        errorMsg.includes('quota') ||
+        errorMsg.includes('RESOURCE_EXHAUSTED')) {
+        console.warn(`🔄 ${modelId} 配额已用，尝试降级...`);
+        continue;
+      }
+
+      // 其他错误也继续尝试下一个模型
+      continue;
+    }
   }
+
+  return res.status(500).json({
+    error: "所有文本生成通道均不可用",
+    details: "没有可用的千问模型"
+  });
 }
 
 /**
  * 处理语音合成
  */
-async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGenAI | null) {
-  if (!genAIModality) {
-    return res.status(500).json({ error: "TTS 服务未初始化" });
-  }
-
+async function handleSpeechSynthesis(req: any, res: any) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -156,43 +164,41 @@ async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGe
     return res.status(400).json({ error: "Missing text in request" });
   }
 
-  // TTS 模型列表
-  const ttsModels = [
-    'gemini-2.5-flash-001',         // 优先版本
-    'gemini-2.0-flash',             // 次级降级
-    'gemini-2.0-flash-lite',        // 保底模型
-  ];
-
-  for (const modelId of ttsModels) {
+  // 尝试所有可用的千问TTS模型
+  for (const modelId of QWEN_TTS_MODELS) {
     try {
       console.log(`🎙️ 尝试语音合成，模型: ${modelId}, 声音: ${voice}`);
 
-      const response = await genAIModality.models.generateContent({
-        model: modelId,
-        contents: [{
-          role: "user",
-          parts: [{ text }]
-        }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: voice
-              }
-            }
+      const response = await axios.post(
+        QWEN_TTS_API,
+        {
+          model: modelId,
+          input: {
+            text: text
+          },
+          parameters: {
+            voice: voice === 'female' ? 'xiaoxiao' : 'xiaogang', // 千问的声音参数
+            rate: 1.0,
+            volume: 50
           }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${qwenApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000,
+          responseType: 'arraybuffer'
         }
-      } as any);
+      );
 
-      const part = response.candidates?.[0]?.content?.parts?.[0];
-
-      if (part && "inlineData" in part && part.inlineData) {
+      const audioData = response.data;
+      if (audioData && audioData.byteLength > 0) {
         console.log(`✅ 语音合成成功，使用模型 ${modelId}`);
         return res.status(200).json({
           success: true,
-          data: part.inlineData.data,
-          mimeType: part.inlineData.mimeType || 'audio/mpeg',
+          data: audioData.toString('base64'),
+          mimeType: 'audio/mpeg',
           model: modelId
         });
       }
@@ -202,9 +208,10 @@ async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGe
       console.warn(`⚠️ 模型 ${modelId} 失败:`, errorMsg);
 
       // 检查是否为配额错误
-      if (errorMsg.includes('RESOURCE_EXHAUSTED') ||
+      if (errorMsg.includes('rate_limit') ||
         errorMsg.includes('quota') ||
-        errorMsg.includes('429')) {
+        errorMsg.includes('429') ||
+        errorMsg.includes('RESOURCE_EXHAUSTED')) {
         console.warn(`🔄 ${modelId} 配额已用，尝试降级...`);
         continue;
       }
@@ -216,18 +223,14 @@ async function handleSpeechSynthesis(req: any, res: any, genAIModality: GoogleGe
 
   return res.status(500).json({
     error: "所有语音合成通道均不可用",
-    details: "没有可用的 TTS 模型"
+    details: "没有可用的千问TTS模型"
   });
 }
 
 /**
  * 处理图片生成（生成提示词）
  */
-async function handleImageGeneration(req: any, res: any, genAI: GoogleGenerativeAI | null) {
-  if (!genAI) {
-    return res.status(500).json({ error: "AI 服务未初始化" });
-  }
-
+async function handleImageGeneration(req: any, res: any) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -243,81 +246,76 @@ async function handleImageGeneration(req: any, res: any, genAI: GoogleGenerative
 Generate an image prompt that describes a fitting visual representation. The prompt should be vivid, descriptive, and suitable for AI image generation.
 Return ONLY the image prompt, no additional text.`;
 
-  try {
-    console.log("🖼️ 正在生成图片提示词...");
+  // 尝试所有可用的千问模型
+  for (const modelId of QWEN_TEXT_MODELS) {
+    try {
+      console.log(`🖼️ 正在生成图片提示词，使用模型: ${modelId}...`);
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-001" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const imagePrompt = response.text();
+      const response = await axios.post(
+        QWEN_TEXT_API,
+        {
+          model: modelId,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          parameters: {
+            max_tokens: 500,
+            temperature: 0.8,
+            top_p: 0.9
+          }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${qwenApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 30000
+        }
+      );
 
-    // 使用免费的图片生成服务
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}`;
+      const result = response.data;
+      if (result.code === 200 || result.status_code === '200' || !result.code) {
+        const imagePrompt = result.output?.text || result.result?.output?.text || '';
+        if (imagePrompt) {
+          // 使用免费的图片生成服务
+          const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}`;
 
-    return res.status(200).json({
-      success: true,
-      prompt: imagePrompt,
-      imageUrl: imageUrl,
-      isUrl: true,
-      model: "gemini-2.5-flash-001"
-    });
-
-  } catch (error: any) {
-    // 检测配额错误
-    const isQuotaExceeded = error.message?.includes('429') ||
-      error.message?.includes('quota') ||
-      error.message?.includes('RESOURCE_EXHAUSTED');
-
-    if (isQuotaExceeded) {
-      console.warn("⚠️ 2.5 Flash 配额用尽，尝试 Gemini 2.0 Flash...");
-
-      try {
-        const model20 = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        const result20 = await model20.generateContent(prompt);
-        const response20 = await result20.response;
-        let imagePrompt = response20.text();
-
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}`;
-
-        return res.status(200).json({
-          success: true,
-          prompt: imagePrompt,
-          imageUrl: imageUrl,
-          isUrl: true,
-          model: "gemini-2.0-flash (Fallback)"
-        });
-      } catch (fallbackError2: any) {
-        // 2.0 也失败，尝试 2.0 Flash-Lite
-        console.warn("⚠️ 2.0 Flash 配额用尽，尝试 Gemini 2.0 Flash-Lite...");
-        try {
-          const modelLite = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
-          const resultLite = await modelLite.generateContent(prompt);
-          const responseLite = await resultLite.response;
-          let imageLitePrompt = responseLite.text();
-
-          const imageLiteUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(imageLitePrompt)}`;
-
+          console.log(`✅ 图片提示词生成成功，使用模型: ${modelId}`);
           return res.status(200).json({
             success: true,
-            prompt: imageLitePrompt,
-            imageUrl: imageLiteUrl,
+            prompt: imagePrompt,
+            imageUrl: imageUrl,
             isUrl: true,
-            model: "gemini-2.0-flash-lite (Final Fallback)"
-          });
-        } catch (fallbackError3: any) {
-          return res.status(500).json({
-            error: "图片提示词生成失败（所有模型都已达到配额）",
-            details: fallbackError3.message
+            model: modelId
           });
         }
       }
-    }
 
-    return res.status(500).json({
-      error: "图片生成服务调用失败",
-      details: error.message
-    });
+    } catch (error: any) {
+      const errorMsg = error.message || String(error);
+      console.warn(`⚠️ 模型 ${modelId} 失败:`, errorMsg);
+
+      // 检查是否为配额错误
+      if (errorMsg.includes('rate_limit') ||
+        errorMsg.includes('quota') ||
+        errorMsg.includes('429') ||
+        errorMsg.includes('RESOURCE_EXHAUSTED')) {
+        console.warn(`🔄 ${modelId} 配额已用，尝试降级...`);
+        continue;
+      }
+
+      // 其他错误也继续尝试下一个模型
+      continue;
+    }
   }
+
+  return res.status(500).json({
+    error: "图片生成服务调用失败",
+    details: "没有可用的千问模型"
+  });
 }
 
 /**
@@ -331,8 +329,7 @@ function buildNewsPrompt(dateStr?: string): string {
   yesterdayDate.setDate(now.getDate() - 1);
   const yesterday = yesterdayDate.toISOString().split('T')[0];
 
-  return `
-Role: Editor-in-Chief for "TechPulse Daily" (每日科技脉搏).
+  return `Role: Editor-in-Chief for "TechPulse Daily" (每日科技脉搏).
 Task: Curate the most significant global technology news strictly for **${today}** (and late ${yesterday}).
 Language: Simplified Chinese (简体中文).
 
@@ -341,8 +338,23 @@ CRITICAL DATE CONSTRAINT:
 - **ABSOLUTELY NO NEWS OLDER THAN 48 HOURS.**
 - If a story is from last week, DISCARD IT immediately.
 
-[Rest of news generation instructions...]
+Priority Order:
+1. **Artificial Intelligence (AI)**: LLMs, Agents, AGI breakthroughs
+2. **Tech Giants**: Apple, Microsoft, Google, Meta, Tesla major moves
+3. **Semiconductors & Chips**: Nvidia, TSMC, Quantum Computing
+4. **Frontier Tech**: Brain-Computer Interfaces, Robotics, Bio-tech
+5. **Energy & Aerospace**: New Energy, SpaceX, Space Exploration
+6. **Fundamental Science**: Physics, Material Science, Mathematics
 
-Return as JSON array with objects containing: title, content, source, url, date.
-`;
+Return as valid JSON array with objects containing: title, content, source, url, date.
+Example format:
+[
+  {
+    "title": "标题",
+    "content": "内容摘要",
+    "source": "来源",
+    "url": "链接",
+    "date": "${today}"
+  }
+]`;
 }

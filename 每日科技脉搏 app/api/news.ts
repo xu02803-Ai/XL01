@@ -1,8 +1,7 @@
-import { GoogleGenAI } from "@google/genai";
+import axios from 'axios';
 
-const ai = new GoogleGenAI({ 
-  apiKey: process.env.GEMINI_API_KEY || process.env.API_KEY 
-});
+const qwenApiKey = process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY;
+const QWEN_TEXT_API = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
 
 const getDateContext = () => {
   const now = new Date();
@@ -32,11 +31,12 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    const modelId = "gemini-2.5-flash";
+    // 性价比优化：使用免费和低价模型
+    // qwen-plus: 最便宜（0.8元/百万tokens） | qwen-turbo: 快速（1.5元） | qwen-coder-plus: 通用（1.5元）
+    const QWEN_MODELS = ['qwen-plus', 'qwen-turbo', 'qwen-coder-plus'];
     const { today, yesterday } = getDateContext();
 
-    const prompt = `
-Role: Editor-in-Chief for "TechPulse Daily" (每日科技脉搏).
+    const prompt = `Role: Editor-in-Chief for "TechPulse Daily" (每日科技脉搏).
 Task: Curate the most significant global technology news strictly for **${today}** (and late ${yesterday}).
 Language: Simplified Chinese (简体中文).
 
@@ -44,10 +44,9 @@ CRITICAL DATE CONSTRAINT:
 - You must ONLY include news that happened or was reported on **${yesterday}** or **${today}**.
 - **ABSOLUTELY NO NEWS OLDER THAN 48 HOURS.**
 - If a story is from last week, DISCARD IT immediately.
-- Check the publication date carefully.
 
 Priority Order:
-1. **Artificial Intelligence (AI)**: LLMs, Agents, AGI breakthroughs, OpenAI, Gemini, Claude
+1. **Artificial Intelligence (AI)**: LLMs, Agents, AGI breakthroughs
 2. **Tech Giants**: Apple, Microsoft, Google, Meta, Tesla major moves
 3. **Semiconductors & Chips**: Nvidia, TSMC, Quantum Computing
 4. **Frontier Tech**: Brain-Computer Interfaces, Robotics, Bio-tech
@@ -55,10 +54,9 @@ Priority Order:
 6. **Fundamental Science**: Physics, Material Science, Mathematics
 
 Instructions:
-1. Use Google Search to find **Breaking News** and **Real-time Updates**.
-2. Select **6 to 8 distinct stories** covering the categories above.
-3. Sort strictly by priority (AI news first).
-4. Provide detailed summary (3-5 sentences) with key facts, context, and impact.
+1. Select **6 to 8 distinct stories** covering the categories above.
+2. Sort strictly by priority (AI news first).
+3. Provide detailed summary (3-5 sentences) with key facts, context, and impact.
 
 CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
 [
@@ -67,35 +65,74 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
     "summary": "Detailed summary in Chinese",
     "category": "Category name (e.g. 人工智能, 芯片技术)"
   }
-]
-`;
+]`;
 
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: [{
-        role: "user",
-        parts: [{ text: prompt }]
-      }],
-      config: {
-        tools: [{ googleSearch: {} }]
+    // Try all available Qwen models
+    for (const modelId of QWEN_MODELS) {
+      try {
+        console.log(`🚀 Trying Qwen model: ${modelId}`);
+
+        const response = await axios.post(
+          QWEN_TEXT_API,
+          {
+            model: modelId,
+            messages: [
+              {
+                role: 'user',
+                content: prompt
+              }
+            ],
+            parameters: {
+              max_tokens: 2000,
+              temperature: 0.7,
+              top_p: 0.8
+            }
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${qwenApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            timeout: 30000
+          }
+        );
+
+        const result = response.data;
+        if (result.code === 200 || result.status_code === '200' || !result.code) {
+          const textContent = result.output?.text || result.result?.output?.text || '';
+          if (textContent) {
+            let jsonString = textContent.trim();
+            // Clean markdown if present
+            jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+            
+            // Validate JSON
+            JSON.parse(jsonString);
+            
+            console.log(`✅ News generated successfully using model: ${modelId}`);
+            return res.status(200).json({ success: true, data: jsonString });
+          }
+        }
+      } catch (error: any) {
+        const errorMsg = error.message || String(error);
+        console.warn(`⚠️ Model ${modelId} failed:`, errorMsg);
+
+        // Check if it's a quota error
+        if (errorMsg.includes('rate_limit') ||
+          errorMsg.includes('429') ||
+          errorMsg.includes('quota') ||
+          errorMsg.includes('RESOURCE_EXHAUSTED')) {
+          console.warn(`🔄 ${modelId} quota exceeded, trying fallback...`);
+          continue;
+        }
+
+        continue;
       }
-    } as any);
-
-    const content = response.candidates?.[0]?.content?.parts?.[0];
-    
-    if (!content || !("text" in content)) {
-      return res.status(500).json({ error: "No text response from API" });
     }
 
-    let jsonString = content.text.trim();
-    
-    // Clean markdown if present
-    jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-    
-    // Validate JSON
-    JSON.parse(jsonString);
-    
-    res.status(200).json({ success: true, data: jsonString });
+    return res.status(500).json({
+      success: false,
+      error: "All Qwen models unavailable"
+    });
   } catch (error: any) {
     console.error("API Error:", error);
     res.status(500).json({ 

@@ -113,18 +113,18 @@ async function runTests(): Promise<void> {
 
   // 测试 6: 禁用模型 (POST)
   await testEndpoint(
-    '禁用 gemini-2.5-flash 模型',
+    '禁用 qwen-max 模型',
     'POST',
     '/api/ai-hub?type=stats',
-    { action: 'disable', model: 'gemini-2.5-flash' }
+    { action: 'disable', model: 'qwen-max' }
   );
 
   // 测试 7: 启用模型 (POST)
   await testEndpoint(
-    '启用 gemini-2.5-flash 模型',
+    '启用 qwen-max 模型',
     'POST',
     '/api/ai-hub?type=stats',
-    { action: 'enable', model: 'gemini-2.5-flash' }
+    { action: 'enable', model: 'qwen-max' }
   );
 
   // 统计结果
