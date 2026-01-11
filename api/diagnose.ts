@@ -26,25 +26,21 @@ export default async function handler(req: any, res: any) {
         value: process.env.SUPABASE_SERVICE_KEY ? '***set***' : 'NOT SET',
         hint: 'Should be a long JWT token starting with eyJ'
       },
-      GEMINI_API_KEY: {
-        exists: !!process.env.GEMINI_API_KEY,
-        value: process.env.GEMINI_API_KEY ? '***set***' : 'NOT SET',
-        hint: 'Should be your Google AI API key'
+      GOOGLE_AI_API_KEY: {
+        exists: !!process.env.GOOGLE_AI_API_KEY,
+        value: process.env.GOOGLE_AI_API_KEY ? '***set***' : 'NOT SET',
+        hint: 'Get from https://aistudio.google.com/ or https://ai.google.dev/'
       },
       JWT_SECRET: {
         exists: !!process.env.JWT_SECRET,
         value: process.env.JWT_SECRET ? '***set***' : 'NOT SET',
         hint: 'Your custom JWT secret'
-      },
-      API_KEY: {
-        exists: !!process.env.API_KEY,
-        value: process.env.API_KEY ? '***set***' : 'NOT SET',
-        hint: 'Alternative API key (fallback)'
       }
     };
 
     const allSet = envVars.SUPABASE_URL.exists && 
-                   envVars.SUPABASE_SERVICE_KEY.exists;
+                   envVars.SUPABASE_SERVICE_KEY.exists &&
+                   envVars.GOOGLE_AI_API_KEY.exists;
 
     res.status(200).json({
       success: true,

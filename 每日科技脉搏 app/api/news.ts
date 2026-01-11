@@ -1,12 +1,9 @@
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// 初始化 OpenAI 客户端，使用千问的兼容模式
-const client = new OpenAI({
-  apiKey: process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY,
-  baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-});
+// 初始化 Gemini 客户端
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
-const QWEN_MODELS = ['qwen-plus', 'qwen-turbo', 'qwen-coder-plus'];
+const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 
 const getDateContext = () => {
   const now = new Date();
@@ -69,25 +66,32 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
   }
 ]`;
 
-    // Try all available Qwen models
-    for (const modelId of QWEN_MODELS) {
+    // Try all available Gemini models
+    for (const modelId of GEMINI_MODELS) {
       try {
-        console.log(`🚀 Calling Qwen model: ${modelId}`);
+        console.log(`🚀 Calling Gemini model: ${modelId}`);
 
-        const response = await client.chat.completions.create({
-          model: modelId,
-          messages: [
+        const modelInstance = genAI.getGenerativeModel({ model: modelId });
+        
+        const response = await modelInstance.generateContent({
+          contents: [
             {
               role: 'user',
-              content: prompt
+              parts: [
+                {
+                  text: prompt
+                }
+              ]
             }
           ],
-          temperature: 0.7,
-          top_p: 0.8,
-          max_tokens: 2000,
+          generationConfig: {
+            temperature: 0.7,
+            topP: 0.8,
+            maxOutputTokens: 2000,
+          }
         });
 
-        const textContent = response.choices?.[0]?.message?.content;
+        const textContent = response.response.text();
         if (textContent) {
           let jsonString = textContent.trim();
           // Clean markdown if present
@@ -103,12 +107,12 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
         const errorMsg = error.message || String(error);
         console.warn(`⚠️ Model ${modelId} failed:`, errorMsg);
 
-        // Check if it's a quota error
-        if (errorMsg.includes('rate_limit') ||
+        // Check if it's a quota/rate limit error
+        if (errorMsg.includes('RESOURCE_EXHAUSTED') ||
           errorMsg.includes('429') ||
-          errorMsg.includes('quota') ||
-          errorMsg.includes('RESOURCE_EXHAUSTED')) {
-          console.warn(`🔄 ${modelId} quota exceeded, trying fallback...`);
+          errorMsg.includes('rate limit') ||
+          errorMsg.includes('quota')) {
+          console.warn(`🔄 ${modelId} rate limit exceeded, trying fallback...`);
           continue;
         }
 
@@ -118,7 +122,7 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
 
     return res.status(500).json({
       success: false,
-      error: "All Qwen models unavailable"
+      error: "All Gemini models unavailable"
     });
   } catch (error: any) {
     console.error("API Error:", error);
