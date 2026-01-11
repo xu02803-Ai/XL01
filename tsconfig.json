@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2020"],
     "module": "ESNext",
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -12,10 +12,9 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
     "types": ["node"]
   },
-  "include": ["api", "**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "dist", ".next"]
+  "include": ["api/**/*.ts"],
+  "exclude": ["node_modules", "dist", ".next", "每日科技脉搏 app"]
 }
 
