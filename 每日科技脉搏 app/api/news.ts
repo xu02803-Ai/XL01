@@ -1,7 +1,12 @@
-import axios from 'axios';
+import OpenAI from 'openai';
 
-const qwenApiKey = process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY;
-const QWEN_TEXT_API = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
+// 初始化 OpenAI 客户端，使用千问的兼容模式
+const client = new OpenAI({
+  apiKey: process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_KEY,
+  baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+});
+
+const QWEN_MODELS = ['qwen-plus', 'qwen-turbo', 'qwen-coder-plus'];
 
 const getDateContext = () => {
   const now = new Date();
@@ -31,9 +36,6 @@ export default async function handler(req: any, res: any) {
   }
 
   try {
-    // 性价比优化：使用免费和低价模型
-    // qwen-plus: 最便宜（0.8元/百万tokens） | qwen-turbo: 快速（1.5元） | qwen-coder-plus: 通用（1.5元）
-    const QWEN_MODELS = ['qwen-plus', 'qwen-turbo', 'qwen-coder-plus'];
     const { today, yesterday } = getDateContext();
 
     const prompt = `Role: Editor-in-Chief for "TechPulse Daily" (每日科技脉搏).
@@ -70,47 +72,32 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
     // Try all available Qwen models
     for (const modelId of QWEN_MODELS) {
       try {
-        console.log(`🚀 Trying Qwen model: ${modelId}`);
+        console.log(`🚀 Calling Qwen model: ${modelId}`);
 
-        const response = await axios.post(
-          QWEN_TEXT_API,
-          {
-            model: modelId,
-            messages: [
-              {
-                role: 'user',
-                content: prompt
-              }
-            ],
-            parameters: {
-              max_tokens: 2000,
-              temperature: 0.7,
-              top_p: 0.8
+        const response = await client.chat.completions.create({
+          model: modelId,
+          messages: [
+            {
+              role: 'user',
+              content: prompt
             }
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${qwenApiKey}`,
-              'Content-Type': 'application/json'
-            },
-            timeout: 30000
-          }
-        );
+          ],
+          temperature: 0.7,
+          top_p: 0.8,
+          max_tokens: 2000,
+        });
 
-        const result = response.data;
-        if (result.code === 200 || result.status_code === '200' || !result.code) {
-          const textContent = result.output?.text || result.result?.output?.text || '';
-          if (textContent) {
-            let jsonString = textContent.trim();
-            // Clean markdown if present
-            jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-            
-            // Validate JSON
-            JSON.parse(jsonString);
-            
-            console.log(`✅ News generated successfully using model: ${modelId}`);
-            return res.status(200).json({ success: true, data: jsonString });
-          }
+        const textContent = response.choices?.[0]?.message?.content;
+        if (textContent) {
+          let jsonString = textContent.trim();
+          // Clean markdown if present
+          jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+          
+          // Validate JSON
+          JSON.parse(jsonString);
+          
+          console.log(`✅ News generated successfully using model: ${modelId}`);
+          return res.status(200).json({ success: true, data: jsonString });
         }
       } catch (error: any) {
         const errorMsg = error.message || String(error);
