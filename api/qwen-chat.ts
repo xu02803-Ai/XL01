@@ -1,5 +1,4 @@
 import OpenAI from 'openai';
-import { NextResponse } from 'next/server';
 
 // 初始化 OpenAI 客户端，指向阿里云千问的兼容端点
 const openai = new OpenAI({
@@ -8,9 +7,9 @@ const openai = new OpenAI({
 });
 
 /**
- * POST /api/qwen/chat
+ * POST /api/qwen-chat
  * 
- * 最佳实践：使用 OpenAI 兼容模式调用千问
+ * 千问 API - OpenAI 兼容模式
  * 
  * 请求体:
  * {
@@ -19,46 +18,41 @@ const openai = new OpenAI({
  *   ],
  *   "model": "qwen-plus" // 可选，默认 qwen-plus
  * }
- * 
- * 注意：Vercel Free 版有 10 秒超时限制
- * 如果使用 qwen-max，建议启用流式输出 (stream: true)
  */
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-    const { messages, model = 'qwen-plus', stream = false } = body;
+export default async function handler(req: any, res: any) {
+  // CORS 配置
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    if (!messages || !Array.isArray(messages)) {
-      return NextResponse.json(
-        { error: 'messages array is required' },
-        { status: 400 }
-      );
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const { messages, model = 'qwen-plus', stream = false } = req.method === 'GET' 
+      ? req.query 
+      : (typeof req.body === 'string' ? JSON.parse(req.body) : req.body) || {};
+
+    if (!messages) {
+      return res.status(400).json({ error: 'messages array is required' });
     }
 
-    console.log(`🚀 Calling Qwen (${model}) with ${messages.length} messages`);
+    console.log(`🚀 Calling Qwen (${model}) with ${Array.isArray(messages) ? messages.length : 1} messages`);
 
     const response = await openai.chat.completions.create({
       model: model,
-      messages: messages,
+      messages: Array.isArray(messages) ? messages : [{ role: 'user', content: messages }],
       temperature: 0.7,
       top_p: 0.8,
       max_tokens: 2000,
       stream: stream,
     });
 
-    if (stream) {
-      // 处理流式响应
-      const stream = response as any;
-      return new Response(stream.toReadableStream());
-    } else {
-      // 处理普通响应
-      return NextResponse.json({
-        success: true,
-        message: response.choices[0].message,
-        model: model,
-        usage: response.usage,
-      });
-    }
+    return res.status(200).json({
+      success: true,
+      message: response.choices?.[0]?.message || { role: 'assistant', content: '' },
+      model: model,
+      usage: response.usage,
+    });
   } catch (error: any) {
     console.error('❌ Qwen API Error:', error);
     
@@ -69,67 +63,18 @@ export async function POST(req: Request) {
       code: error.code,
     };
 
-    // 如果是超时错误（Vercel 限制）
-    if (error.status === 504 || error.message?.includes('timeout')) {
-      return NextResponse.json(
-        {
-          error: 'Request timeout (Vercel Free has 10s limit)',
-          hint: 'Try using qwen-plus instead of qwen-max, or enable streaming for longer responses',
-          details: errorDetails,
-        },
-        { status: 504 }
-      );
-    }
-
     // 如果是 API 密钥错误
     if (error.status === 401) {
-      return NextResponse.json(
-        {
-          error: 'Invalid or missing API key',
-          hint: 'Check DASHSCOPE_API_KEY environment variable in Vercel',
-          details: errorDetails,
-        },
-        { status: 401 }
-      );
+      return res.status(401).json({
+        error: 'Invalid or missing API key',
+        hint: 'Check DASHSCOPE_API_KEY environment variable',
+        details: errorDetails,
+      });
     }
 
-    return NextResponse.json(
-      {
-        error: 'Failed to call Qwen API',
-        details: errorDetails,
-      },
-      { status: error.status || 500 }
-    );
-  }
-}
-
-/**
- * GET /api/qwen/chat
- * 
- * 快速测试端点
- */
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const prompt = searchParams.get('prompt') || '你好';
-  const model = searchParams.get('model') || 'qwen-plus';
-
-  try {
-    const response = await openai.chat.completions.create({
-      model: model,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 1000,
+    return res.status(error.status || 500).json({
+      error: 'Failed to call Qwen API',
+      details: errorDetails,
     });
-
-    return NextResponse.json({
-      success: true,
-      prompt: prompt,
-      response: response.choices[0].message.content,
-      model: model,
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message },
-      { status: error.status || 500 }
-    );
   }
 }
