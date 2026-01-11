@@ -44,12 +44,19 @@ export default async function handler(req: any, res: any) {
 
     res.status(200).json({
       success: true,
-      message: allSet ? '✅ 所有必需的环境变量已设置' : '❌ 缺少环境变量',
+      message: allSet ? '✅ All required environment variables are set' : '❌ Missing environment variables',
       environmentVariables: envVars,
       allConfigured: allSet,
+      criticalIssue: !envVars.GOOGLE_AI_API_KEY.exists,
+      criticalIssueMessage: !envVars.GOOGLE_AI_API_KEY.exists ? 'GOOGLE_AI_API_KEY must be set for Gemini API to function' : null,
       timestamp: new Date().toISOString(),
       nodeVersion: process.version,
-      platform: process.platform
+      platform: process.platform,
+      help: {
+        getGoogleApiKey: 'https://aistudio.google.com/app/apikey',
+        documentationLink: 'https://ai.google.dev/docs',
+        repositoryGuide: 'See GEMINI_MIGRATION_GUIDE.md'
+      }
     });
   } catch (error: any) {
     console.error('Diagnostic error:', error);

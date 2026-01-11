@@ -1,7 +1,13 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// 验证 API Key
+if (!process.env.GOOGLE_AI_API_KEY) {
+  console.error('❌ GOOGLE_AI_API_KEY environment variable is not set!');
+  console.error('   Get one from: https://aistudio.google.com/app/apikey');
+}
+
 // 初始化 Gemini 客户端
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || 'not-configured');
 
 const GEMINI_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 
@@ -30,6 +36,16 @@ export default async function handler(req: any, res: any) {
 
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // Check if API Key is configured
+  if (!process.env.GOOGLE_AI_API_KEY) {
+    console.error('❌ GOOGLE_AI_API_KEY not configured');
+    return res.status(500).json({ 
+      success: false,
+      error: "GOOGLE_AI_API_KEY environment variable not set",
+      help: "Set GOOGLE_AI_API_KEY in Vercel environment variables. Get one from https://aistudio.google.com/app/apikey"
+    });
   }
 
   try {
@@ -125,11 +141,25 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
       error: "All Gemini models unavailable"
     });
   } catch (error: any) {
-    console.error("API Error:", error);
+    const errorStr = String(error);
+    console.error("API Error:", errorStr);
+    
+    // Check if response is HTML (error page)
+    if (errorStr.includes('<!DOCTYPE') || errorStr.includes('<html')) {
+      return res.status(500).json({ 
+        success: false,
+        error: "API returned HTML error (likely API Key issue or service unavailable)",
+        help: "Check GOOGLE_AI_API_KEY is set in environment variables"
+      });
+    }
+    
     res.status(500).json({ 
       success: false,
-      error: error?.message || "Internal server error" 
+      error: error?.message || "Internal server error",
+      type: error?.name
     });
+  }
+}
   }
 }
 

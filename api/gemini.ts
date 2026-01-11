@@ -1,7 +1,13 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+// 验证 API Key 是否存在
+if (!process.env.GOOGLE_AI_API_KEY) {
+  console.error('❌ GOOGLE_AI_API_KEY environment variable is not set!');
+  console.error('   Get one from: https://aistudio.google.com/app/apikey');
+}
+
 // 初始化 Gemini 客户端
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || 'not-configured');
 
 // 支持的模型列表（按免费额度和性能排序）
 const TEXT_MODELS = [
@@ -20,6 +26,10 @@ const TEXT_MODELS = [
 export async function generateText(prompt: string, model: string = 'gemini-2.0-flash'): Promise<string> {
   if (!prompt) {
     throw new Error('Prompt is required');
+  }
+
+  if (!process.env.GOOGLE_AI_API_KEY) {
+    throw new Error('GOOGLE_AI_API_KEY environment variable is not set. Get one from https://aistudio.google.com/app/apikey');
   }
 
   // 验证模型是否在支持列表中
