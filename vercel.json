@@ -3,9 +3,18 @@
   "installCommand": "npm install && cd '每日科技脉搏 app' && npm install",
   "outputDirectory": "每日科技脉搏 app/dist",
   "framework": "vite",
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs20.x"
+    }
+  },
   "rewrites": [
     {
-      "source": "/:path*",
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]

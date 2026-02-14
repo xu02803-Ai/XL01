@@ -28,32 +28,47 @@ const getDateContext = () => {
 // --- News Fetching (via API) ---
 
 export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefingData> => {
-  const { today, yesterday } = getDateContext();
   const token = getAuthToken();
   
   try {
     console.log("🔄 Fetching news from /api/ai-handler...");
-    const response = await fetch('/api/ai-handler?action=text&dateStr=' + encodeURIComponent(dateStr), {
+    const url = '/api/ai-handler?action=text&dateStr=' + encodeURIComponent(dateStr);
+    console.log("📍 Request URL:", url);
+    
+    const response = await fetch(url, {
       method: 'GET',
-      headers: token ? {
-        'Authorization': `Bearer ${token}`,
-      } : {},
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
     });
 
     console.log("📨 API Response Status:", response.status);
     
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("❌ API Error Response:", errorText);
-      throw new Error(`API Error: ${response.status} - ${errorText}`);
+      let errorText: string;
+      try {
+        errorText = await response.text();
+      } catch {
+        errorText = 'Unable to read response body';
+      }
+      console.error("❌ API Error Response:", errorText.substring(0, 500));
+      throw new Error(`API Error ${response.status}: ${errorText.substring(0, 200)}`);
     }
 
-    const data = await response.json();
+    let data: any;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      console.error("❌ Failed to parse JSON response:", parseError);
+      throw new Error('Failed to parse API response - invalid JSON returned');
+    }
+    
     console.log("📦 Parsed Response:", data);
     
     if (!data.success) {
       console.error("❌ API returned success=false:", data.error);
-      throw new Error(data.error || "Failed to fetch news");
+      throw new Error(data.error || "Failed to fetch news from API");
     }
 
     // ai-handler 返回的是 data 字段中的内容
@@ -67,10 +82,30 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
       } else if (jsonString.includes("```")) {
         jsonString = jsonString.replace(/```/g, "");
       }
+      jsonString = jsonString.trim();
     }
     
-    const newsItems = (typeof jsonString === 'string' ? JSON.parse(jsonString.trim()) : jsonString) as NewsItem[];
+    let newsItems: NewsItem[];
+    try {
+      const parsed = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
+      newsItems = Array.isArray(parsed) ? parsed : [];
+    } catch (jsonError) {
+      console.error("❌ Failed to parse news JSON:", jsonError);
+      console.error("Raw data:", jsonString.substring(0, 500));
+      throw new Error('Failed to parse news data - invalid JSON format');
+    }
+    
     console.log("✅ Successfully parsed news items:", newsItems.length);
+
+    if (!newsItems || newsItems.length === 0) {
+      console.warn("⚠️ No news items returned from API");
+      // 返回空数组而不是抛出错误
+      return {
+        news: [],
+        groundingMetadata: null,
+        date: dateStr
+      };
+    }
 
     return {
       news: newsItems,
@@ -78,9 +113,9 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
       date: dateStr
     };
 
-  } catch (error) {
-    console.error("❌ Error fetching news:", error);
-    throw error;
+  } catch (error: any) {
+    console.error("❌ Error fetching news:", error.message || error);
+    throw new Error(error.message || "Failed to fetch news. Please check the console for details.");
   }
 };
 

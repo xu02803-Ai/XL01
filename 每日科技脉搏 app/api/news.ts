@@ -160,6 +160,4 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
     });
   }
 }
-  }
-}
 

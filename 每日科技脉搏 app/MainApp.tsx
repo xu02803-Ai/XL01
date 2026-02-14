@@ -86,7 +86,7 @@ const MainApp: React.FC<MainAppProps> = ({ onNavigate }) => {
       console.log("🚀 Starting news generation...");
       const data = await fetchDailyTechNews(today);
       if (!data.news || data.news.length === 0) {
-        throw new Error("No news items found. Please try again.");
+        throw new Error("暂无新闻。请检查 API 配置或稍后重试。");
       }
       console.log("✅ News generation successful, items:", data.news.length);
       setBriefingData(data);
@@ -94,7 +94,24 @@ const MainApp: React.FC<MainAppProps> = ({ onNavigate }) => {
     } catch (err: any) {
       console.error("❌ News generation failed:", err);
       setAppState(AppState.ERROR);
-      setErrorMsg(err.message || "Failed to fetch news. Check browser console for details.");
+      
+      // 提供更详细和用户友好的错误消息
+      let userMessage = err.message || "获取新闻时出错。";
+      
+      // 处理常见错误
+      if (userMessage.includes('API Error 404')) {
+        userMessage = "⚠️ API 端点未找到。请检查服务器配置。";
+      } else if (userMessage.includes('API Error 500')) {
+        userMessage = "❌ 服务器错误。请检查 API 日志和环境变量（如 GOOGLE_AI_API_KEY）。";
+      } else if (userMessage.includes('Failed to parse')) {
+        userMessage = "❌ 数据格式错误。API 返回的数据无法解析。";
+      } else if (userMessage.includes('invalid JSON')) {
+        userMessage = "❌ JSON 解析失败。API 返回了无效的 JSON 数据。";
+      } else if (userMessage.includes('not configured')) {
+        userMessage = "❌ API 密钥未配置。请设置 GOOGLE_AI_API_KEY 环境变量。";
+      }
+      
+      setErrorMsg(userMessage + "\n\n📋 详情请查看浏览器控制台 (F12)。");
     }
   };
 
