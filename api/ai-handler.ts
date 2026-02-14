@@ -249,18 +249,11 @@ START OUTPUTTING PURE JSON NOW:`;
     }
   }
   
-  // 验证数据格式
-  if (!Array.isArray(newsData)) {
-    console.warn('⚠️ Parsed data is not an array, wrapping it');
-    newsData = [newsData];
-  }
-  
-  console.log('✅ Final news data has', newsData.length, 'items');
-  
   return res.status(200).json({
     success: true,
-    data: newsData,
-    count: newsData.length,
+    // 返回 JSON 字符串（前端期望的格式）
+    data: JSON.stringify(newsData),
+    count: Array.isArray(newsData) ? newsData.length : 1,
     model: 'gemini-2.0-flash',
     timestamp: new Date().toISOString()
   });
