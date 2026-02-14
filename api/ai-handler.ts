@@ -60,11 +60,25 @@ export default async function handler(req: any, res: any) {
         });
     }
   } catch (error: any) {
-    console.error('❌ AI Handler Error:', error.message);
+    const errorMessage = error.message || String(error);
+    const errorName = error.name || 'Error';
+    
+    console.error('🔴 AI Handler Error:', {
+      name: errorName,
+      message: errorMessage,
+      type: typeof error,
+      fullError: String(error)
+    });
+    
     return res.status(500).json({
       success: false,
-      error: error.message || 'Internal server error',
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      error: errorMessage,
+      errorType: errorName,
+      details: {
+        path: '/api/ai-handler',
+        action: action || 'unknown',
+        timestamp: new Date().toISOString()
+      }
     });
   }
 }
@@ -280,7 +294,16 @@ async function generateText(prompt: string): Promise<string> {
       return content;
     } catch (error: any) {
       const errorMsg = error.message || String(error);
-      console.error(`❌ Error with model ${model}:`, errorMsg);
+      const errorFull = JSON.stringify(error, null, 2);
+      
+      console.error(`❌ Error with model ${model}:`, {
+        message: errorMsg,
+        name: error.name,
+        code: error.code,
+        status: error.status,
+        fullError: errorFull.substring(0, 500)
+      });
+      
       errors.push({ model, error: errorMsg });
 
       // 检查是否是速率限制错误
