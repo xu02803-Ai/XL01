@@ -2,6 +2,35 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 console.log('🚀 AI Handler module loading...');
 
+/**
+ * Gemini API 响应类型定义
+ */
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
+  error?: {
+    message?: string;
+    code?: number;
+  };
+}
+
+/**
+ * Gemini 图像生成响应类型定义
+ */
+interface GeminiImageResponse {
+  images?: Array<{
+    data?: string;
+    uri?: string;
+  }>;
+  error?: {
+    message?: string;
+    code?: number;
+  };
+}
+
 // 支持的模型列表 (按优先顺序，v1beta 兼容 - 2026年最新模型)
 const TEXT_MODELS = [
   'gemini-flash-latest',     // 最稳定的别名
@@ -302,9 +331,15 @@ Return ONLY the vivid image prompt, no additional text or explanation.`;
     
     // 验证 URL 可访问性
     try {
-      const headCheck = await fetch(pollsUrl, { method: 'HEAD', timeout: 3000 });
-      if (!headCheck.ok) {
-        console.warn("⚠️ HEAD check failed, but will try full URL");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      try {
+        const headCheck = await fetch(pollsUrl, { method: 'HEAD', signal: controller.signal });
+        if (!headCheck.ok) {
+          console.warn("⚠️ HEAD check failed, but will try full URL");
+        }
+      } finally {
+        clearTimeout(timeoutId);
       }
     } catch (e) {
       console.warn("⚠️ Accessibility check failed, continuing with direct URL");
