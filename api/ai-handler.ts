@@ -260,7 +260,7 @@ START OUTPUTTING PURE JSON NOW:`;
 }
 
 /**
- * 处理图片生成
+ * 处理图片生成 - 使用 Gemini 2.5 Flash 图像生成模型
  */
 async function handleImageGeneration(headline: string, apiKey: string, res: any) {
   if (!headline) {
@@ -281,10 +281,9 @@ async function handleImageGeneration(headline: string, apiKey: string, res: any)
     }
     
     // 第一步：用 Gemini 生成英文的图片提示词
-    // 这样 Pollinations.ai 能理解得更好
     const promptForImageGeneration = `Given this Chinese tech news headline: "${headline}"
 
-Generate a concise, vivid, and descriptive English image prompt for AI image generation (DALL-E, Midjourney style).
+Generate a concise, vivid, and descriptive English image prompt for AI image generation.
 The prompt should:
 - Be 1-2 sentences max
 - Be creative and visually evocative
@@ -292,7 +291,7 @@ The prompt should:
 - Use specific visual elements
 - Be in English
 
-Return ONLY the image prompt, no additional text or explanation.`;
+Return ONLY the image prompt, no additional text.`;
 
     console.log("📝 Generating image prompt from headline...");
     const imagePrompt = await generateText(promptForImageGeneration, apiKey);
@@ -300,18 +299,78 @@ Return ONLY the image prompt, no additional text or explanation.`;
     
     console.log("✅ Generated image prompt:", cleanedPrompt.substring(0, 100));
     
-    // 第二步：用生成的提示词调用 Pollinations.ai
-    const encodedPrompt = encodeURIComponent(cleanedPrompt);
-    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=600&height=400&seed=${Date.now()}`;
+    // 第二步：使用 Gemini 2.5 Flash 的图像生成功能
+    console.log("🎨 Calling Gemini 2.5 Flash for image generation...");
     
-    console.log("📸 Generated image URL for prompt");
+    const imageGenerationUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-imag:generateImage?key=${apiKey}`;
+    
+    const imageRequestBody = {
+      prompt: cleanedPrompt,
+      number_of_images: 1,
+      aspect_ratio: "4:3",
+      safety_filter_level: "block_none"
+    };
+    
+    console.log("📤 Sending image generation request...");
+    
+    const imageResponse = await fetch(imageGenerationUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(imageRequestBody)
+    });
+    
+    console.log("📥 Image API Response Status:", imageResponse.status);
+    
+    if (!imageResponse.ok) {
+      const errorText = await imageResponse.text();
+      console.error("❌ Image generation failed:", imageResponse.status, errorText);
+      
+      // 降级方案：如果 Gemini 失败，使用 Pollinations.ai
+      console.log("🔄 Falling back to Pollinations.ai...");
+      const encodedPrompt = encodeURIComponent(cleanedPrompt);
+      const fallbackUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=600&height=400&seed=${Date.now()}`;
+      
+      return res.status(200).json({
+        success: true,
+        imageUrl: fallbackUrl,
+        headline,
+        imagePrompt: cleanedPrompt,
+        model: 'pollinations-ai (fallback)',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const imageData = await imageResponse.json();
+    
+    // 处理 Gemini 返回的图像数据
+    let imageUrl: string | null = null;
+    
+    if (imageData.images && imageData.images.length > 0) {
+      // 如果返回了 base64 数据
+      if (imageData.images[0].data) {
+        imageUrl = `data:image/jpeg;base64,${imageData.images[0].data}`;
+      } else if (imageData.images[0].uri) {
+        // 如果返回了 URI
+        imageUrl = imageData.images[0].uri;
+      }
+    }
+    
+    if (!imageUrl) {
+      console.warn("⚠️ No image URL in response, falling back to Pollinations.ai");
+      const encodedPrompt = encodeURIComponent(cleanedPrompt);
+      imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=600&height=400&seed=${Date.now()}`;
+    }
+    
+    console.log("✅ Image generation successful");
     
     return res.status(200).json({
       success: true,
-      imageUrl: imageUrl,  // 前端期望的字段
+      imageUrl: imageUrl,
       headline,
       imagePrompt: cleanedPrompt,
-      model: 'gemini-2.0-flash + pollinations-ai',
+      model: 'gemini-2.5-flash-imag',
       timestamp: new Date().toISOString()
     });
     
