@@ -236,10 +236,14 @@ START OUTPUTTING PURE JSON NOW:`;
   console.log('📝 Raw response length:', content.length);
   console.log('📝 First 200 chars:', content.substring(0, 200));
   
+  // 预处理 AI 响应，修复常见的格式问题
+  const preprocessed = preprocessAiResponse(content);
+  console.log('📝 After preprocessing:', preprocessed.substring(0, 200));
+  
   // 使用强化的 JSON 修复逻辑
   let newsData: any;
   try {
-    newsData = parseAndFixJson(content);
+    newsData = parseAndFixJson(preprocessed);
     console.log('✅ JSON parse succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
   } catch (e: any) {
     console.error('❌ JSON parsing completely failed:', e.message);
@@ -249,7 +253,7 @@ START OUTPUTTING PURE JSON NOW:`;
       success: false,
       error: 'Failed to parse news JSON: ' + e.message,
       hint: 'The API response contained malformed JSON that could not be repaired',
-      rawContentPreview: content.substring(0, 500),
+      rawContentPreview: preprocessed.substring(0, 500),
       data: []
     });
   }
@@ -426,6 +430,110 @@ function fixJsonStringValues(jsonStr: string): string {
 }
 
 /**
+ * 预处理 AI 响应，移除字符串值中的问题字符
+ */
+function preprocessAiResponse(rawContent: string): string {
+  // 1. 移除所有形式的代码块标记
+  let processed = rawContent
+    .replace(/```[\s\S]*?```/g, '')  // 移除所有代码块
+    .replace(/^```[\s\S]*?\n/g, '')  // 移除开始代码块
+    .replace(/\n```[\s\S]*?$/g, ''); // 移除结束代码块
+  
+  // 2. 尝试提取最外层的 JSON 数组（可能前后有文字）
+  const arrayMatch = processed.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  if (arrayMatch) {
+    processed = arrayMatch[0];
+  }
+  
+  // 3. 修复常见的问题：
+  // - 替换字符串内的真实换行符为空格或 \\n
+  // - 但需要保留 JSON 结构的换行符
+  
+  // 使用状态机来只修复字符串内部的字符
+  let result = '';
+  let inString = false;
+  let escaped = false;
+  
+  for (let i = 0; i < processed.length; i++) {
+    const char = processed[i];
+    const nextChar = i < processed.length - 1 ? processed[i + 1] : '';
+    
+    // 跟踪转义状态
+    if (char === '\\' && !escaped) {
+      escaped = true;
+      result += char;
+      continue;
+    }
+    
+    // 跟踪字符串边界
+    if (char === '"' && !escaped && nextChar !== ':') {
+      inString = !inString;
+    }
+    
+    // 修复字符串内的问题字符
+    if (inString && !escaped) {
+      if (char === '\n' || char === '\r') {
+        result += ' '; // 用空格替换换行符
+        escaped = false;
+        continue;
+      }
+      if (char === '\t') {
+        result += ' '; // 用空格替换制表符
+        escaped = false;
+        continue;
+      }
+    }
+    
+    escaped = false;
+    result += char;
+  }
+  
+  return result;
+}
+function fixUnterminatedStrings(jsonStr: string): string {
+  // 检查是否存在未终止的字符串：找到所有 "key": "value" 但缺少结束引号的情况
+  let fixed = jsonStr;
+  let inString = false;
+  let escaped = false;
+  let result = '';
+  let stringStartPos = -1;
+  
+  for (let i = 0; i < fixed.length; i++) {
+    const char = fixed[i];
+    const prevChar = i > 0 ? fixed[i - 1] : '';
+    
+    // 检查转义
+    if (char === '\\' && !escaped) {
+      escaped = true;
+      result += char;
+      continue;
+    }
+    
+    // 处理引号
+    if (char === '"' && !escaped) {
+      if (!inString) {
+        inString = true;
+        stringStartPos = i;
+      } else {
+        inString = false;
+        stringStartPos = -1;
+      }
+    }
+    
+    escaped = false;
+    result += char;
+  }
+  
+  // 如果最后还有未终止的字符串，添加结束引号
+  if (inString && stringStartPos !== -1) {
+    console.warn('⚠️ Found unterminated string starting at position', stringStartPos);
+    result += '"';
+  }
+  
+  return result;
+}
+
+/**
  * 尝试修复并解析 JSON
  */
 function parseAndFixJson(jsonString: string): any {
@@ -483,8 +591,17 @@ function parseAndFixJson(jsonString: string): any {
   } catch (e5: any) {
     console.warn('⚠️ Parse after string value fix failed');
   }
+
+  // 第六步：修复未终止的字符串
+  fixed = fixUnterminatedStrings(fixed);
   
-  // 第六步：终极修复：将所有内容折叠成单行
+  try {
+    return JSON.parse(fixed);
+  } catch (e6: any) {
+    console.warn('⚠️ Parse after fixing unterminated strings failed');
+  }
+  
+  // 第七步：终极修复：将所有内容折叠成单行
   const lines = fixed.split('\n');
   fixed = lines
     .map(line => line.trim())
@@ -495,10 +612,10 @@ function parseAndFixJson(jsonString: string): any {
   
   try {
     return JSON.parse(fixed);
-  } catch (e6: any) {
+  } catch (e7: any) {
     console.error('❌ All JSON repair attempts failed');
-    console.error('Position of error:', e6.message.match(/position (\d+)/)?.[1]);
-    throw new Error('Unable to parse JSON after all repair attempts: ' + e6.message);
+    console.error('Position of error:', e7.message.match(/position (\d+)/)?.[1]);
+    throw new Error('Unable to parse JSON after all repair attempts: ' + e7.message);
   }
 }
 
