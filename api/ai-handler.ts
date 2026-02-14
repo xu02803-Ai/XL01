@@ -187,7 +187,7 @@ Return ONLY valid JSON array (single line, no code blocks):
 [
   {
     "headline": "HEADLINE IN CHINESE (compelling and descriptive)",
-    "summary": "1-2 sentences overview in Chinese",
+    "summary": "3-4 sentences comprehensive summary in Chinese. First sentence should be the main point. Include key details, context, and significance. Make it detailed enough to understand the full story.",
     "category": "CATEGORY_NAME",
     "content": "Detailed 3-4 paragraph explanation in single line. What happened. Why it matters. Technical details. Industry impact. Use periods to separate thoughts.",
     "source": "News outlet name",
@@ -195,7 +195,10 @@ Return ONLY valid JSON array (single line, no code blocks):
   }
 ]
 
-CRITICAL: No line breaks, no newlines in any string value. All on single lines.
+CRITICAL: 
+- No line breaks, no newlines in any string value. All on single lines.
+- Make 'summary' field have at least 3-4 detailed sentences
+- summary should be detailed and informative, not just a brief mention
 
 START OUTPUTTING PURE JSON NOW:`;
 

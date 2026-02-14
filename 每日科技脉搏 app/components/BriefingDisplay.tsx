@@ -120,7 +120,7 @@ const NewsCard: React.FC<{
             <h3 className={`text-lg font-bold mb-3 leading-tight ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-200'} transition-colors`}>
                 {item.headline}
             </h3>
-            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
+            <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed mb-4 line-clamp-4 min-h-[5rem]">
                 {item.summary}
             </p>
           </div>
