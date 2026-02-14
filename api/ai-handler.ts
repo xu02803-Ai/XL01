@@ -274,14 +274,16 @@ async function handleSpeechSynthesis(text: string, voice: string = 'female', res
 }
 
 /**
- * 使用 Gemini 生成文本
+ * 使用 Gemini v1 REST API 生成文本（强制使用正式版 v1 而非 v1beta）
+ * 这绕过了 SDK 可能的 v1beta 限制
  */
 async function generateText(prompt: string): Promise<string> {
   if (!prompt) {
     throw new Error('Prompt is required');
   }
 
-  if (!process.env.GOOGLE_AI_API_KEY) {
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
+  if (!apiKey) {
     throw new Error('GOOGLE_AI_API_KEY not configured');
   }
 
@@ -289,15 +291,19 @@ async function generateText(prompt: string): Promise<string> {
 
   for (const model of TEXT_MODELS) {
     try {
-      console.log(`🚀 Calling Gemini model: ${model}`);
+      console.log(`🚀 Calling Gemini v1 REST API: ${model}`);
       
-      const modelInstance = genAI.getGenerativeModel({ model });
+      // 使用 v1 正式版 API 而非 v1beta
+      const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
       
-      const response = await modelInstance.generateContent({
+      const requestBody = {
         contents: [
           {
-            role: 'user',
-            parts: [{ text: prompt }]
+            parts: [
+              {
+                text: prompt
+              }
+            ]
           }
         ],
         generationConfig: {
@@ -305,25 +311,43 @@ async function generateText(prompt: string): Promise<string> {
           topP: 0.8,
           maxOutputTokens: 2000
         }
+      };
+
+      console.log(`📡 Sending request to: ${url.substring(0, 80)}...`);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
       });
 
-      const content = response.response.text();
-      if (!content) {
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        const errorMsg = responseData?.error?.message || `HTTP ${response.status}`;
+        const errorCode = responseData?.error?.code || response.status;
+        throw new Error(`[${errorCode}] ${errorMsg}`);
+      }
+
+      if (!responseData.candidates || !responseData.candidates[0]) {
         throw new Error('Empty response from Gemini API');
+      }
+
+      const content = responseData.candidates[0]?.content?.parts?.[0]?.text;
+      if (!content) {
+        throw new Error('No text in response from Gemini API');
       }
 
       console.log(`✅ Text generation successful with model: ${model}`);
       return content;
     } catch (error: any) {
       const errorMsg = error.message || String(error);
-      const errorFull = JSON.stringify(error, null, 2);
       
       console.error(`❌ Error with model ${model}:`, {
         message: errorMsg,
-        name: error.name,
-        code: error.code,
-        status: error.status,
-        fullError: errorFull.substring(0, 500)
+        details: String(error).substring(0, 300)
       });
       
       errors.push({ model, error: errorMsg });
@@ -336,7 +360,7 @@ async function generateText(prompt: string): Promise<string> {
         errorMsg.includes('quota')
       ) {
         console.warn(`🔄 ${model} rate limit exceeded, trying next model...`);
-        continue; // 尝试下一个模型
+        continue;
       }
 
       // 其他错误，如果不是最后一个模型也继续尝试
