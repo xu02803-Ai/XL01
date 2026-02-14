@@ -173,29 +173,29 @@ async function handleNewsGeneration(dateStr: string | undefined, apiKey: string,
 
 Date context: ${today} (yesterday: ${yesterday})
 
-REQUIREMENTS:
+CRITICAL REQUIREMENTS:
 - ONLY news from last 48 hours
-- 6-8 stories
+- 6-8 stories  
 - Each story must be DETAILED and INFORMATIVE
 - Sort by importance: AI > Tech Giants > Semiconductors > Frontier Tech > Energy > Science
+- ALL VALUES MUST BE ON A SINGLE LINE - NO LINE BREAKS OR NEWLINES IN STRINGS
+- Replace line breaks with spaces or period
 
-Return ONLY this JSON format (no markdown, no code blocks, no explanation):
+IMPORTANT: Ensure all string values are properly escaped and on single lines.
+
+Return ONLY valid JSON array (single line, no code blocks):
 [
   {
     "headline": "HEADLINE IN CHINESE (compelling and descriptive)",
     "summary": "1-2 sentences overview in Chinese",
     "category": "CATEGORY_NAME",
-    "content": "3-4 detailed paragraphs in Chinese explaining the news story, impacts, and significance",
-    "source": "News outlet/organization name",
-    "impact": "Describe the potential impact and significance of this news"
+    "content": "Detailed 3-4 paragraph explanation in single line. What happened. Why it matters. Technical details. Industry impact. Use periods to separate thoughts.",
+    "source": "News outlet name",
+    "impact": "Describe potential impact and significance in single line"
   }
 ]
 
-Make the 'content' field VERY DETAILED with multiple sentences covering:
-- What happened (the main event)
-- Why it matters (implications)
-- Technical details or context
-- Industry impact or future outlook
+CRITICAL: No line breaks, no newlines in any string value. All on single lines.
 
 START OUTPUTTING PURE JSON NOW:`;
 
@@ -228,9 +228,28 @@ START OUTPUTTING PURE JSON NOW:`;
       jsonString = jsonString.substring(arrayStart, arrayEnd + 1);
     }
     
-    // 第三步：处理中文引号和特殊字符
+    // 第三步：处理中文引号
     jsonString = jsonString.replace(/[\u201c\u201d]/g, '"');
     jsonString = jsonString.replace(/[\u2018\u2019]/g, "'");
+    
+    // 第四步：处理嵌入的换行符和特殊字符
+    // 这是关键步骤：把 JSON 中间可能的实际换行符替换成 \n
+    // 但要保证只在字符串值中做替换，不破坏 JSON 结构
+    try {
+      // 先尝试用正则表达式修复可能的换行符问题
+      // 匹配 "key": "值" 的模式，把其中的换行符转义
+      jsonString = jsonString.replace(/"([^"]*?)":\s*"([^"]*?)"/g, (match, key, value) => {
+        // 对 value 中的换行符进行转义
+        const escapedValue = value
+          .replace(/\n/g, '\\n')
+          .replace(/\r/g, '\\r')
+          .replace(/\t/g, '\\t')
+          .replace(/"/g, '\\"');
+        return `"${key}": "${escapedValue}"`;
+      });
+    } catch (e) {
+      console.warn('⚠️ Regex replacement failed:', (e as any).message);
+    }
     
     console.log('🧹 After cleanup, length:', jsonString.length);
     console.log('🧹 First 400 chars:', jsonString.substring(0, 400));
@@ -241,21 +260,33 @@ START OUTPUTTING PURE JSON NOW:`;
       console.log('✅ Parse after cleanup succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
     } catch (e2) {
       console.error('❌ Parse after cleanup failed:', (e2 as any).message);
-      console.error('   String to parse:', jsonString);
+      console.error('   Problem at position 104 approximately');
+      console.error('   String around position 104:', jsonString.substring(Math.max(0, 100), 110));
       
-      // 最后的尝试：逐行查找问题
-      const lines = jsonString.split('\n');
-      console.error('   Total lines:', lines.length);
-      for (let i = 0; i < Math.min(10, lines.length); i++) {
-        console.error(`   Line ${i}: ${lines[i].substring(0, 100)}`);
+      // 尝试手动 JSON 修复：替换所有实际换行符为 \n
+      const fixedJson = jsonString
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .join('')
+        .replace(/,\s*}/g, '}')
+        .replace(/,\s*]/g, ']');
+      
+      console.log('🔧 Attempting fixed JSON:', fixedJson.substring(0, 150));
+      
+      try {
+        newsData = JSON.parse(fixedJson);
+        console.log('✅ Fixed JSON parse succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
+      } catch (e3) {
+        console.error('❌ Even fixed JSON failed:', (e3 as any).message);
+        
+        return res.status(200).json({
+          success: false,
+          error: 'Failed to parse news JSON: ' + (e3 as any).message,
+          hint: 'JSON format error - check raw content in logs',
+          data: []
+        });
       }
-      
-      return res.status(200).json({
-        success: false,
-        error: 'Failed to parse news JSON: ' + (e2 as any).message,
-        hint: 'Check Vercel logs for raw content',
-        data: []
-      });
     }
   }
   
