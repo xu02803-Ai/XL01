@@ -78,7 +78,7 @@ const NewsCard: React.FC<{
 
     let mounted = true;
     // Generate image on mount
-    generateNewsImage(item.headline).then(url => {
+    generateNewsImage(item.headline, item.summary, item.category).then(url => {
       if (mounted) {
         setImageUrl(url);
         setLoadingImg(false);

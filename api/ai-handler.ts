@@ -73,7 +73,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { action, dateStr, headline, text, prompt, voice } = 
+  const { action, dateStr, headline, text, prompt, voice, summary, category } = 
     req.method === 'GET' ? req.query : (req.body || {});
 
   try {
@@ -86,7 +86,7 @@ export default async function handler(req: any, res: any) {
         return await handleTextGeneration(text || prompt, dateStr, apiKey, res);
       
       case 'image':
-        return await handleImageGeneration(headline, apiKey, res);
+        return await handleImageGeneration(headline, summary, category, apiKey, res);
       
       case 'news':
         return await handleNewsGeneration(dateStr, apiKey, res);
@@ -301,9 +301,9 @@ START OUTPUTTING PURE JSON NOW:`;
 }
 
 /**
- * 处理图片生成 - 使用 Gemini 2.5 Flash 图像生成模型
+ * 处理图片生成 - 使用高级视觉提示词 + Pollinations.ai
  */
-async function handleImageGeneration(headline: string, apiKey: string, res: any) {
+async function handleImageGeneration(headline: string, summary: string = '', category: string = '', apiKey: string, res: any) {
   if (!headline) {
     return res.status(400).json({
       success: false,
@@ -321,97 +321,61 @@ async function handleImageGeneration(headline: string, apiKey: string, res: any)
       });
     }
     
-    // 第一步：用 Gemini 生成英文的图片提示词
-    const promptForImageGeneration = `Given this Chinese tech news headline: "${headline}"
+    // 使用 Gemini 生成高质量的视觉提示词
+    const promptForImageGeneration = `You are an expert visual artist and prompt engineer. Based on this tech news:
 
-Generate a concise, vivid, and descriptive English image prompt for AI image generation.
-The prompt should:
-- Be 1-2 sentences max
-- Be creative and visually evocative
-- Capture the essence of the tech news
-- Use specific visual elements
-- Be in English
+Headline: "${headline}"
+Category: "${category}"
+Summary: "${summary}"
 
-Return ONLY the image prompt, no additional text.`;
+Generate a HIGHLY DETAILED and VIVID image prompt in English that:
+1. Captures the essence of the tech innovation
+2. Includes specific visual elements (colors, composition, style, lighting)
+3. Is suitable for high-quality AI image generation
+4. Should be cinematic, professional, and visually striking
+5. 2-3 sentences max, but VERY descriptive
 
-    console.log("📝 Generating image prompt from headline...");
+Focus on:
+- What should be in the image (main subject, background, elements)
+- Visual style (modern, futuristic, professional, detailed, cinematic)
+- Colors and atmosphere
+- Composition and perspective
+
+Example quality level: "A sleek, futuristic AI server farm with holographic interfaces glowing softly, surrounded by flowing data streams in blue and purple hues, cinematic lighting, 8K professional photography style"
+
+Return ONLY the vivid image prompt, no additional text or explanation.`;
+
+    console.log("📝 Generating detailed image prompt from news...");
     const imagePrompt = await generateText(promptForImageGeneration, apiKey);
     const cleanedPrompt = imagePrompt.trim();
     
-    console.log("✅ Generated image prompt:", cleanedPrompt.substring(0, 100));
+    console.log("✅ Generated detailed image prompt:", cleanedPrompt.substring(0, 150));
     
-    // 第二步：使用 Gemini 2.5 Flash 的图像生成功能
-    console.log("🎨 Calling Gemini 2.5 Flash for image generation...");
+    // 使用 Pollinations.ai 生成高质量图片
+    // 这是一个免费的、经过验证的图像生成服务
+    const encodedPrompt = encodeURIComponent(cleanedPrompt);
+    const pollsUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=500&enhance=true&seed=${Date.now()}`;
     
-    const imageGenerationUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-imag:generateImage?key=${apiKey}`;
+    console.log("📸 Generating image with Pollinations.ai...");
     
-    const imageRequestBody = {
-      prompt: cleanedPrompt,
-      number_of_images: 1,
-      aspect_ratio: "4:3",
-      safety_filter_level: "block_none"
-    };
-    
-    console.log("📤 Sending image generation request...");
-    
-    const imageResponse = await fetch(imageGenerationUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(imageRequestBody)
-    });
-    
-    console.log("📥 Image API Response Status:", imageResponse.status);
-    
-    if (!imageResponse.ok) {
-      const errorText = await imageResponse.text();
-      console.error("❌ Image generation failed:", imageResponse.status, errorText);
-      
-      // 降级方案：如果 Gemini 失败，使用 Pollinations.ai
-      console.log("🔄 Falling back to Pollinations.ai...");
-      const encodedPrompt = encodeURIComponent(cleanedPrompt);
-      const fallbackUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=600&height=400&seed=${Date.now()}`;
-      
-      return res.status(200).json({
-        success: true,
-        imageUrl: fallbackUrl,
-        headline,
-        imagePrompt: cleanedPrompt,
-        model: 'pollinations-ai (fallback)',
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    const imageData = await imageResponse.json() as GeminiImageResponse;
-    
-    // 处理 Gemini 返回的图像数据
-    let imageUrl: string | null = null;
-    
-    if (imageData.images && imageData.images.length > 0) {
-      // 如果返回了 base64 数据
-      if (imageData.images[0].data) {
-        imageUrl = `data:image/jpeg;base64,${imageData.images[0].data}`;
-      } else if (imageData.images[0].uri) {
-        // 如果返回了 URI
-        imageUrl = imageData.images[0].uri;
+    // 验证 URL 可访问性
+    try {
+      const headCheck = await fetch(pollsUrl, { method: 'HEAD', timeout: 3000 });
+      if (!headCheck.ok) {
+        console.warn("⚠️ HEAD check failed, but will try full URL");
       }
+    } catch (e) {
+      console.warn("⚠️ Accessibility check failed, continuing with direct URL");
     }
     
-    if (!imageUrl) {
-      console.warn("⚠️ No image URL in response, falling back to Pollinations.ai");
-      const encodedPrompt = encodeURIComponent(cleanedPrompt);
-      imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=600&height=400&seed=${Date.now()}`;
-    }
-    
-    console.log("✅ Image generation successful");
+    console.log("✅ Image URL generated successfully");
     
     return res.status(200).json({
       success: true,
-      imageUrl: imageUrl,
+      imageUrl: pollsUrl,
       headline,
       imagePrompt: cleanedPrompt,
-      model: 'gemini-2.5-flash-imag',
+      model: 'gemini-2.0-flash (prompt) + pollinations-ai (generation)',
       timestamp: new Date().toISOString()
     });
     

@@ -121,16 +121,23 @@ export const fetchDailyTechNews = async (dateStr: string): Promise<DailyBriefing
 
 // --- Image Generation ---
 
-export const generateNewsImage = async (headline: string): Promise<string | null> => {
+export const generateNewsImage = async (headline: string, summary?: string, category?: string): Promise<string | null> => {
   try {
-    console.log("🖼️ Requesting image for:", headline);
+    console.log("🖼️ Requesting image for:", headline.substring(0, 50));
     const token = getAuthToken();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout (increased from 10)
     
-    // Add timestamp parameter to prevent caching and ensure unique images
-    const timestamp = Date.now();
-    const url = `/api/ai-handler?action=image&headline=${encodeURIComponent(headline)}&timestamp=${timestamp}`;
+    // 传递更多参数给后端，便于生成更好的图片
+    const params = new URLSearchParams({
+      action: 'image',
+      headline: headline,
+      ...(summary ? { summary } : {}),
+      ...(category ? { category } : {}),
+      timestamp: Date.now().toString()
+    });
+    
+    const url = `/api/ai-handler?${params.toString()}`;
     
     const response = await fetch(url, {
       method: 'GET',
@@ -153,10 +160,10 @@ export const generateNewsImage = async (headline: string): Promise<string | null
       return null;
     }
 
-    // ai-handler 返回 imageUrl (自动生成的 Pollinations.ai 链接)
+    // ai-handler 返回 imageUrl
     if (data.imageUrl) {
       console.log("✅ Image URL received from ai-handler");
-      return data.imageUrl; // 直接返回 URL
+      return data.imageUrl;
     }
 
     // 备用：处理 base64 响应
