@@ -273,28 +273,45 @@ async function handleImageGeneration(headline: string, apiKey: string, res: any)
   try {
     console.log("🖼️ Generating image for headline:", headline.substring(0, 50));
     
-    // 方案1：使用免费的 Pollinations.ai API 直接生成图片
-    // 这是最快最简单的方式，无需额外的 API Key
-    const encodedHeadline = encodeURIComponent(headline);
-    const pollsUrl = `https://image.pollinations.ai/prompt/${encodedHeadline}?width=600&height=400&seed=${Date.now()}`;
-    
-    console.log("📸 Using Pollinations.ai URL:", pollsUrl);
-    
-    // 验证 URL 可访问性（可选的轻量检查）
-    try {
-      const headCheck = await fetch(pollsUrl, { method: 'HEAD', timeout: 5000 });
-      if (headCheck.ok) {
-        console.log("✅ Image URL verified, using:", pollsUrl);
-      }
-    } catch (e) {
-      console.warn("⚠️ HEAD request failed, will try direct URL:", (e as any).message);
+    if (!apiKey) {
+      return res.status(500).json({
+        success: false,
+        error: 'GOOGLE_AI_API_KEY not configured'
+      });
     }
+    
+    // 第一步：用 Gemini 生成英文的图片提示词
+    // 这样 Pollinations.ai 能理解得更好
+    const promptForImageGeneration = `Given this Chinese tech news headline: "${headline}"
+
+Generate a concise, vivid, and descriptive English image prompt for AI image generation (DALL-E, Midjourney style).
+The prompt should:
+- Be 1-2 sentences max
+- Be creative and visually evocative
+- Capture the essence of the tech news
+- Use specific visual elements
+- Be in English
+
+Return ONLY the image prompt, no additional text or explanation.`;
+
+    console.log("📝 Generating image prompt from headline...");
+    const imagePrompt = await generateText(promptForImageGeneration, apiKey);
+    const cleanedPrompt = imagePrompt.trim();
+    
+    console.log("✅ Generated image prompt:", cleanedPrompt.substring(0, 100));
+    
+    // 第二步：用生成的提示词调用 Pollinations.ai
+    const encodedPrompt = encodeURIComponent(cleanedPrompt);
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=600&height=400&seed=${Date.now()}`;
+    
+    console.log("📸 Generated image URL for prompt");
     
     return res.status(200).json({
       success: true,
-      imageUrl: pollsUrl,  // 前端期望的字段
+      imageUrl: imageUrl,  // 前端期望的字段
       headline,
-      model: 'pollinations-ai',
+      imagePrompt: cleanedPrompt,
+      model: 'gemini-2.0-flash + pollinations-ai',
       timestamp: new Date().toISOString()
     });
     
