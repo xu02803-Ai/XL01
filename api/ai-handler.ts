@@ -19,9 +19,9 @@ try {
   console.error('❌ Failed to initialize Gemini client:', error);
 }
 
-// 支持的模型列表 (仅使用稳定且公开可用的模型)
-const TEXT_MODELS = ['gemini-1.5-flash', 'gemini-2.0-flash'];
-const IMAGE_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+// 支持的模型列表 (使用最新别名以确保 API 兼容性)
+const TEXT_MODELS = ['gemini-1.5-flash-latest', 'gemini-2.0-flash-001'];
+const IMAGE_MODELS = ['gemini-2.0-flash-001', 'gemini-1.5-flash-latest'];
 
 /**
  * 统一 AI 处理器 - 处理文本、图片、语音等生成任务
