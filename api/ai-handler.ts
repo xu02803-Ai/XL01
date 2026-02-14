@@ -19,16 +19,16 @@ try {
   console.error('❌ Failed to initialize Gemini client:', error);
 }
 
-// 支持的模型列表 (按优先顺序，v1beta 兼容)
+// 支持的模型列表 (按优先顺序，v1beta 兼容 - 2026年最新模型)
 const TEXT_MODELS = [
-  'gemini-1.5-flash',        // 最稳定
-  'gemini-1.5-flash-latest',
-  'gemini-2.0-flash-exp'     // 2.0 模型在 beta 通道
+  'gemini-flash-latest',     // 最稳定的别名
+  'gemini-2.0-flash-001',    // 2.0 系列精准版本
+  'gemini-2.5-flash'         // 最先进的模型
 ];
 const IMAGE_MODELS = [
-  'gemini-2.0-flash-exp',
-  'gemini-1.5-flash',
-  'gemini-1.5-flash-latest'
+  'gemini-2.5-flash',        // 最先进的模型
+  'gemini-2.0-flash-001',
+  'gemini-flash-latest'
 ];
 
 /**
