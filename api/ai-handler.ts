@@ -2,33 +2,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 console.log('🚀 AI Handler module loading...');
 
-// 验证 API Key
-if (!process.env.GOOGLE_AI_API_KEY) {
-  console.error('❌ GOOGLE_AI_API_KEY environment variable is not set!');
-  console.error('   Get one from: https://aistudio.google.com/app/apikey');
-} else {
-  console.log('✅ GOOGLE_AI_API_KEY is set, length:', process.env.GOOGLE_AI_API_KEY.length);
-}
-
-// 初始化 Gemini 客户端
-let genAI: any;
-try {
-  genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || 'not-configured');
-  console.log('✅ Gemini client initialized successfully');
-} catch (error) {
-  console.error('❌ Failed to initialize Gemini client:', error);
-}
-
 // 支持的模型列表 (按优先顺序，v1beta 兼容 - 2026年最新模型)
 const TEXT_MODELS = [
   'gemini-flash-latest',     // 最稳定的别名
   'gemini-2.0-flash-001',    // 2.0 系列精准版本
   'gemini-2.5-flash'         // 最先进的模型
-];
-const IMAGE_MODELS = [
-  'gemini-2.5-flash',        // 最先进的模型
-  'gemini-2.0-flash-001',
-  'gemini-flash-latest'
 ];
 
 /**
@@ -74,16 +52,6 @@ export default async function handler(req: any, res: any) {
     });
   }
   
-  // 检查 Gemini 客户端是否初始化成功
-  if (!genAI) {
-    console.error('🔴 Gemini client not initialized!');
-    return res.status(500).json({
-      success: false,
-      error: 'Gemini client initialization failed',
-      details: 'Check GOOGLE_AI_API_KEY environment variable'
-    });
-  }
-  
   // CORS 配置
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -106,18 +74,18 @@ export default async function handler(req: any, res: any) {
       case 'text':
         // 如果有 dateStr，优先生成新闻；否则生成普通文本
         if (dateStr) {
-          return await handleNewsGeneration(dateStr, res);
+          return await handleNewsGeneration(dateStr, apiKey, res);
         }
-        return await handleTextGeneration(text || prompt, dateStr, res);
+        return await handleTextGeneration(text || prompt, dateStr, apiKey, res);
       
       case 'image':
-        return await handleImageGeneration(headline, res);
+        return await handleImageGeneration(headline, apiKey, res);
       
       case 'news':
-        return await handleNewsGeneration(dateStr, res);
+        return await handleNewsGeneration(dateStr, apiKey, res);
       
       case 'speech':
-        return await handleSpeechSynthesis(text, voice, res);
+        return await handleSpeechSynthesis(text, voice, apiKey, res);
       
       default:
         return res.status(400).json({
@@ -153,20 +121,20 @@ export default async function handler(req: any, res: any) {
 /**
  * 处理文本生成
  */
-async function handleTextGeneration(prompt: string, dateStr: string | undefined, res: any) {
+async function handleTextGeneration(prompt: string, dateStr: string | undefined, apiKey: string, res: any) {
   if (!prompt && !dateStr) {
     // 如果没有提供 prompt，生成新闻
-    return handleNewsGeneration(dateStr, res);
+    return handleNewsGeneration(dateStr, apiKey, res);
   }
 
-  if (!process.env.GOOGLE_AI_API_KEY) {
+  if (!apiKey) {
     return res.status(500).json({
       success: false,
       error: 'GOOGLE_AI_API_KEY not configured'
     });
   }
 
-  const content = await generateText(prompt || 'Generate a technology news summary');
+  const content = await generateText(prompt || 'Generate a technology news summary', apiKey);
   
   return res.status(200).json({
     success: true,
@@ -179,8 +147,8 @@ async function handleTextGeneration(prompt: string, dateStr: string | undefined,
 /**
  * 处理新闻生成
  */
-async function handleNewsGeneration(dateStr: string | undefined, res: any) {
-  if (!process.env.GOOGLE_AI_API_KEY) {
+async function handleNewsGeneration(dateStr: string | undefined, apiKey: string, res: any) {
+  if (!apiKey) {
     return res.status(500).json({
       success: false,
       error: 'GOOGLE_AI_API_KEY not configured'
@@ -225,7 +193,7 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
   }
 ]`;
 
-  const content = await generateText(prompt);
+  const content = await generateText(prompt, apiKey);
   
   // 清理 markdown 格式
   let jsonString = content.trim();
@@ -261,7 +229,7 @@ CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
 /**
  * 处理图片生成
  */
-async function handleImageGeneration(headline: string, res: any) {
+async function handleImageGeneration(headline: string, apiKey: string, res: any) {
   if (!headline) {
     return res.status(400).json({
       success: false,
@@ -269,7 +237,7 @@ async function handleImageGeneration(headline: string, res: any) {
     });
   }
 
-  if (!process.env.GOOGLE_AI_API_KEY) {
+  if (!apiKey) {
     return res.status(500).json({
       success: false,
       error: 'GOOGLE_AI_API_KEY not configured'
@@ -282,7 +250,7 @@ Generate a vivid, descriptive image prompt suitable for AI image generation (lik
 The prompt should be 1-2 sentences, creative, and visually evocative.
 Return ONLY the image prompt, no additional text.`;
 
-  const imagePrompt = await generateText(prompt);
+  const imagePrompt = await generateText(prompt, apiKey);
   
   return res.status(200).json({
     success: true,
@@ -296,7 +264,7 @@ Return ONLY the image prompt, no additional text.`;
 /**
  * 处理语音合成
  */
-async function handleSpeechSynthesis(text: string, voice: string = 'female', res: any) {
+async function handleSpeechSynthesis(text: string, voice: string = 'female', apiKey: string, res: any) {
   if (!text) {
     return res.status(400).json({
       success: false,
@@ -336,27 +304,22 @@ interface GeminiResponse {
 /**
  * 使用 Gemini v1beta REST API 生成文本（支持 -latest 后缀和 gemini-2.0 模型）
  * v1beta 是支持最新模型和前沿功能的推荐通道
+ * 
+ * ⚠️ 必须传入 apiKey 参数，不再支持从环境变量读取
+ * 这样做是为了在 Vercel Serverless 环境中避免冷启动问题
  */
-async function generateText(prompt: string, apiKey?: string): Promise<string> {
+async function generateText(prompt: string, apiKey: string): Promise<string> {
   if (!prompt) {
     throw new Error('Prompt is required');
   }
 
-  // 如果没有传入 API Key，尝试从环境变量读取
-  const key = apiKey || (process.env.GOOGLE_AI_API_KEY || '').trim();
-  
-  if (!key || key === 'not-configured') {
-    console.error('🔴 generateText: API Key is missing or empty!');
-    console.error('   Environment variable name it should be: GOOGLE_AI_API_KEY');
-    console.error('   Current value:', {
-      hasKey: !!key,
-      keyLength: key?.length || 0,
-      keyStartsCorrectly: key?.startsWith('AIza') || false,
-      isNotConfigured: key === 'not-configured'
-    });
-    throw new Error('GOOGLE_AI_API_KEY not configured');
+  if (!apiKey || apiKey.trim().length === 0) {
+    console.error('🔴 generateText: API Key is empty!');
+    console.error('   API Key length:', apiKey?.length || 0);
+    throw new Error('API Key is required and cannot be empty');
   }
 
+  const key = apiKey.trim();
   const errors: { model: string; error: string }[] = [];
 
   for (const model of TEXT_MODELS) {
@@ -384,6 +347,7 @@ async function generateText(prompt: string, apiKey?: string): Promise<string> {
       };
 
       console.log(`📡 Sending request to: ${url.substring(0, 80)}...`);
+      console.log(`🔑 API Key length: ${key.length}, starts with: ${key.substring(0, 5)}...`);
 
       const response = await fetch(url, {
         method: 'POST',
