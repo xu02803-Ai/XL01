@@ -15,6 +15,13 @@ const TEXT_MODELS = [
 export default async function handler(req: any, res: any) {
   console.log(`📨 AI Handler called: ${req.method} ${req.url}`);
   
+  // 🔍 诊断日志：检查环境变量是否被注入
+  console.log('🔍 Diagnostic Check:');
+  console.log('   GOOGLE_AI_API_KEY length:', (process.env.GOOGLE_AI_API_KEY || '').length);
+  console.log('   GOOGLE_API_KEY length:', (process.env.GOOGLE_API_KEY || '').length);
+  console.log('   All env vars with KEY:', Object.keys(process.env).filter(k => k.includes('KEY')));
+  console.log('   All env vars with GOOGLE:', Object.keys(process.env).filter(k => k.includes('GOOGLE')));
+  
   // 强制在 handler 函数内部读取，确保 Vercel Runtime 已经加载变量
   const apiKey = (process.env.GOOGLE_AI_API_KEY || '').trim();
   
@@ -305,21 +312,51 @@ interface GeminiResponse {
  * 使用 Gemini v1beta REST API 生成文本（支持 -latest 后缀和 gemini-2.0 模型）
  * v1beta 是支持最新模型和前沿功能的推荐通道
  * 
- * ⚠️ 必须传入 apiKey 参数，不再支持从环境变量读取
- * 这样做是为了在 Vercel Serverless 环境中避免冷启动问题
+ * 🔧 强力手术版本：在函数内部强制实时读取和校验 API Key
+ * 确保 Vercel 运行时的环境变量被正确注入
  */
 async function generateText(prompt: string, apiKey: string): Promise<string> {
   if (!prompt) {
     throw new Error('Prompt is required');
   }
 
-  if (!apiKey || apiKey.trim().length === 0) {
-    console.error('🔴 generateText: API Key is empty!');
-    console.error('   API Key length:', apiKey?.length || 0);
-    throw new Error('API Key is required and cannot be empty');
+  // 🔥 强力读取：在函数内部直接重新读取环境变量，不依赖传入参数
+  let finalKey = apiKey;
+  
+  // 如果传入的 Key 为空，尝试从环境变量读取
+  if (!finalKey || finalKey.trim().length === 0) {
+    console.warn('⚠️ Passed apiKey is empty, attempting to read from process.env');
+    
+    // 尝试从多个可能的环境变量名读取
+    finalKey = (process.env.GOOGLE_AI_API_KEY || 
+                process.env.GOOGLE_API_KEY || 
+                '').trim();
+    
+    console.log('📍 Re-fetched from env:', {
+      googleAiApiKeyLength: (process.env.GOOGLE_AI_API_KEY || '').length,
+      googleApiKeyLength: (process.env.GOOGLE_API_KEY || '').length,
+      finalKeyLength: finalKey.length
+    });
   }
 
-  const key = apiKey.trim();
+  if (!finalKey || finalKey.length === 0) {
+    console.error('🔴 FATAL: API Key is completely empty after all attempts!');
+    console.error('   Passed apiKey length:', apiKey?.length || 0);
+    console.error('   process.env.GOOGLE_AI_API_KEY length:', (process.env.GOOGLE_AI_API_KEY || '').length);
+    console.error('   process.env.GOOGLE_API_KEY length:', (process.env.GOOGLE_API_KEY || '').length);
+    console.error('   All available env vars:', Object.keys(process.env).filter(k => k.toUpperCase().includes('KEY') || k.toUpperCase().includes('API')));
+    throw new Error('API Key is required but completely empty - environment variable not injected by Vercel');
+  }
+
+  const key = finalKey.trim();
+  
+  console.log('✅ API Key validated:', {
+    keyLength: key.length,
+    keyStart: key.substring(0, 5),
+    keyEnd: key.substring(key.length - 5),
+    isValidFormat: key.startsWith('AIza') || key.length > 30
+  });
+
   const errors: { model: string; error: string }[] = [];
 
   for (const model of TEXT_MODELS) {
@@ -328,6 +365,11 @@ async function generateText(prompt: string, apiKey: string): Promise<string> {
       
       // 使用 v1beta API（支持 -latest 后缀和 gemini-2.0 模型）
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+      
+      // 🔍 关键检查：确保 URL 中 key= 后面有值
+      if (!url.includes(`key=${key}`) || url.includes('key=undefined') || url.includes('key=null')) {
+        throw new Error(`CRITICAL: URL is malformed - key parameter is empty or null in URL: ${url.substring(0, 100)}`);
+      }
       
       const requestBody = {
         contents: [
@@ -347,7 +389,7 @@ async function generateText(prompt: string, apiKey: string): Promise<string> {
       };
 
       console.log(`📡 Sending request to: ${url.substring(0, 80)}...`);
-      console.log(`🔑 API Key length: ${key.length}, starts with: ${key.substring(0, 5)}...`);
+      console.log(`🔑 URL Key Parameter: ${url.substring(url.indexOf('key='), Math.min(url.indexOf('key=') + 30, url.length))}`);
 
       const response = await fetch(url, {
         method: 'POST',
@@ -362,6 +404,18 @@ async function generateText(prompt: string, apiKey: string): Promise<string> {
       if (!response.ok) {
         const errorMsg = responseData?.error?.message || `HTTP ${response.status}`;
         const errorCode = responseData?.error?.code || response.status;
+        
+        // 如果是 400 API Key 错误，输出诊断信息
+        if (response.status === 400 && errorMsg.includes('API key')) {
+          console.error('🔴 400 API Key Error:', {
+            errorCode,
+            errorMsg,
+            urlUsed: url.substring(0, 100),
+            keyLength: key.length,
+            keyUsed: key.substring(0, 10) + '...'
+          });
+        }
+        
         throw new Error(`[${errorCode}] ${errorMsg}`);
       }
 
