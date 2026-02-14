@@ -205,14 +205,37 @@ export const generateNewsAudio = async (text: string, voice: 'Male' | 'Female'):
         throw new Error("No audio data in response");
       }
 
-      // Decode Base64 to ArrayBuffer
-      const binaryString = atob(data.data);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      // 处理两种格式的返回数据
+      let base64Data = data.data;
+      
+      // 如果返回的是 data:// URL 格式，需要提取实际的 Base64 部分
+      if (base64Data.startsWith('data:')) {
+        const matches = base64Data.match(/base64,(.+)$/);
+        if (matches && matches[1]) {
+          base64Data = matches[1];
+        } else {
+          throw new Error("Invalid data URL format");
+        }
       }
-      return bytes.buffer;
+      
+      console.log(`🔊 Decoding Base64 audio data (length: ${base64Data.length})`);
+      
+      // Decode Base64 to ArrayBuffer
+      try {
+        const binaryString = atob(base64Data);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        console.log(`✅ Audio decoded successfully, buffer size: ${bytes.buffer.byteLength} bytes`);
+        return bytes.buffer;
+      } catch (decodeError) {
+        console.error("Base64 decode error:", (decodeError as any).message);
+        console.error("Base64 string length:", base64Data.length);
+        console.error("First 50 chars:", base64Data.substring(0, 50));
+        throw new Error("Failed to decode Base64: " + (decodeError as any).message);
+      }
 
     } catch (e) {
       console.warn(`TTS generation failed (Attempt ${attempt}/${MAX_RETRIES})`, e);

@@ -440,9 +440,13 @@ async function handleSpeechSynthesis(text: string, voice: string = 'female', api
   // 这里返回占位符，实际项目应使用 Google Cloud TTS 或其他服务
   console.warn('⚠️ Gemini API does not support TTS natively. Using placeholder response.');
   
+  // 返回纯 Base64（前端会自动加上 data: 前缀）
+  // 这是一个简短的示例 MP3 Base64 编码
+  const placeholderBase64 = '//NExAAiYAIAFIABhADgEgAEBAP/3/w==';
+  
   return res.status(200).json({
     success: true,
-    data: 'data:audio/mpeg;base64,//NExAAiYAIAFIABhADgEgAEBAP/3/w==',
+    data: placeholderBase64,  // 只返回纯 Base64，不包含 data:// 前缀
     mimeType: 'audio/mpeg',
     voice,
     note: 'TTS placeholder - integrate real TTS service for production',
