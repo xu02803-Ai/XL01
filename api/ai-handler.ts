@@ -249,6 +249,8 @@ async function generateText(prompt: string): Promise<string> {
     throw new Error('GOOGLE_AI_API_KEY not configured');
   }
 
+  const errors: { model: string; error: string }[] = [];
+
   for (const model of TEXT_MODELS) {
     try {
       console.log(`🚀 Calling Gemini model: ${model}`);
@@ -279,6 +281,7 @@ async function generateText(prompt: string): Promise<string> {
     } catch (error: any) {
       const errorMsg = error.message || String(error);
       console.error(`❌ Error with model ${model}:`, errorMsg);
+      errors.push({ model, error: errorMsg });
 
       // 检查是否是速率限制错误
       if (
@@ -293,12 +296,15 @@ async function generateText(prompt: string): Promise<string> {
 
       // 其他错误，如果不是最后一个模型也继续尝试
       if (model !== TEXT_MODELS[TEXT_MODELS.length - 1]) {
+        console.log(`⏭️  Trying next model...`);
         continue;
       }
-
-      throw error;
     }
   }
 
-  throw new Error('All Gemini models failed');
+  // 所有模型都失败，返回详细错误
+  const errorDetails = errors.map(e => `${e.model}: ${e.error}`).join(' | ');
+  const detailedError = `All Gemini models failed: ${errorDetails}`;
+  console.error(`🔴 ${detailedError}`);
+  throw new Error(detailedError);
 }
