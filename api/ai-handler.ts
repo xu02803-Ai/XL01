@@ -352,7 +352,7 @@ Return ONLY the image prompt, no additional text.`;
       });
     }
     
-    const imageData = await imageResponse.json();
+    const imageData = await imageResponse.json() as GeminiImageResponse;
     
     // 处理 Gemini 返回的图像数据
     let imageUrl: string | null = null;
@@ -417,6 +417,20 @@ async function handleSpeechSynthesis(text: string, voice: string = 'female', api
     note: 'TTS placeholder - integrate real TTS service for production',
     timestamp: new Date().toISOString()
   });
+}
+
+/**
+ * Gemini 图像生成响应类型定义
+ */
+interface GeminiImageResponse {
+  images?: Array<{
+    data?: string;
+    uri?: string;
+  }>;
+  error?: {
+    message?: string;
+    code?: number;
+  };
 }
 
 /**
