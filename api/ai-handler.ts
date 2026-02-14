@@ -534,6 +534,59 @@ function fixUnterminatedStrings(jsonStr: string): string {
 }
 
 /**
+ * 修复缺失的冒号（在属性名后）
+ */
+function fixMissingColons(jsonStr: string): string {
+  // 匹配 "key" 后直接跟 " 或 数字或 { 或 [ 的情况（缺少冒号）
+  return jsonStr
+    .replace(/"([^"]+)"\s+"/g, '"$1": "')  // "key" "value" -> "key": "value"
+    .replace(/"([^"]+)"\s+([0-9\[{])/g, '"$1": $2');  // "key" numeric -> "key": numeric
+}
+
+/**
+ * 修复缺失的逗号（在对象属性或数组元素之间）
+ */
+function fixMissingCommas(jsonStr: string): string {
+  // 匹配两个对象之间缺少逗号的情况
+  return jsonStr
+    .replace(/}\s*{/g, '}, {')          // }{ -> }, {
+    .replace(/]\s*{/g, '], {')          // ]{ -> ], {
+    .replace(/}\s*\[/g, '}, [')         // }[ -> }, [
+    .replace(/]\s*\[/g, '], [')         // ][ -> ], [
+    .replace(/}\s*"/g, '}, "')          // }" -> }, "
+    .replace(/]\s*"/g, '], "')          // ]" -> ], "
+    .replace(/"\s*"/g, '", "');         // "" -> ", " (between string properties)
+}
+
+/**
+ * 修复 JSON 结构问题
+ */
+function fixJsonStructure(jsonStr: string): string {
+  let fixed = jsonStr;
+  
+  // 移除所有 JSON 外的文本
+  const startIndex = fixed.indexOf('[');
+  const endIndex = fixed.lastIndexOf(']');
+  
+  if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+    fixed = fixed.substring(startIndex, endIndex + 1);
+  }
+  
+  // 应用修复
+  fixed = fixMissingColons(fixed);
+  fixed = fixMissingCommas(fixed);
+  
+  // 修复常见的写法错误
+  fixed = fixed
+    .replace(/:\s*'([^']*)'/g, ': "$1"')  // 单引号改为双引号
+    .replace(/[\u201c\u201d]/g, '"')      // 中文弯引号改为直引号
+    .replace(/[\u2018\u2019]/g, "'")      // 中文单引号改为直单引号
+    .replace(/,\s*([\]}])/g, '$1');       // 移除末尾逗号
+  
+  return fixed;
+}
+
+/**
  * 尝试修复并解析 JSON
  */
 function parseAndFixJson(jsonString: string): any {
@@ -554,6 +607,15 @@ function parseAndFixJson(jsonString: string): any {
     return JSON.parse(fixed);
   } catch (e2: any) {
     console.warn('⚠️ Parse after removing markdown failed');
+  }
+  
+  // 第二点五步：修复 JSON 结构问题（缺失冒号、逗号等）
+  fixed = fixJsonStructure(fixed);
+  
+  try {
+    return JSON.parse(fixed);
+  } catch (e2b: any) {
+    console.warn('⚠️ Parse after structure fix failed');
   }
   
   // 第三步：提取最外层的 JSON 数组
