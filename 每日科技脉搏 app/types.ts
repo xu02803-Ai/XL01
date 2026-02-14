@@ -17,7 +17,10 @@ export interface NewsItem {
   headline: string;
   summary: string;
   category: string;
-  imageUrl?: string; // Added for persistence
+  imageUrl?: string;
+  content?: string;  // 详细内容
+  source?: string;   // 新闻来源
+  impact?: string;   // 影响评估
 }
 
 export interface DailyBriefingData {

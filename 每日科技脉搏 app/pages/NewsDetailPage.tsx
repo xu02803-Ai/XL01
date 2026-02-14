@@ -124,20 +124,59 @@ const NewsDetailPage: React.FC<NewsDetailPageProps> = ({ onNavigate, newsData })
 
           {/* Summary/Content */}
           <div className="prose dark:prose-invert max-w-none">
-            <p className="text-lg text-slate-700 dark:text-slate-300 leading-relaxed mb-6">
-              {article.summary}
-            </p>
+            {/* Quick Summary */}
+            <div className="bg-slate-50 dark:bg-slate-800/50 border-l-4 border-blue-500 p-4 mb-6 rounded">
+              <p className="font-semibold text-slate-900 dark:text-white mb-2">📰 摘要</p>
+              <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                {article.summary}
+              </p>
+            </div>
+
+            {/* Full Content */}
+            {article.content && (
+              <div className="mb-6">
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-4">📖 详细内容</h3>
+                <div className="space-y-4">
+                  {article.content.split('\n\n').map((paragraph, idx) => (
+                    <p key={idx} className="text-slate-700 dark:text-slate-300 leading-relaxed text-lg">
+                      {paragraph}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Impact Section */}
+            {article.impact && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-6 mb-6">
+                <h3 className="text-lg font-semibold text-amber-900 dark:text-amber-200 mb-3">
+                  💡 影响与意义
+                </h3>
+                <p className="text-amber-900 dark:text-amber-100 leading-relaxed">
+                  {article.impact}
+                </p>
+              </div>
+            )}
+
+            {/* Source Information */}
+            {article.source && (
+              <div className="border-t border-slate-200 dark:border-dark-border pt-4 mt-6">
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  <span className="font-semibold">📚 来源：</span> {article.source}
+                </p>
+              </div>
+            )}
 
             {/* Additional details section */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 mt-6">
               <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-200 mb-3">
-                📰 更多信息
+                ℹ️ 关于本文
               </h3>
               <ul className="space-y-2 text-slate-700 dark:text-slate-300">
                 <li>• 本新闻来自科技动态聚合系统</li>
-                <li>• 采用 AI 技术自动生成摘要</li>
-                <li>• 内容会定期更新</li>
-                <li>• 支持收藏和分享功能</li>
+                <li>• 采用 AI 技术自动生成详细摘要和内容</li>
+                <li>• 信息来源于全球主流科技媒体</li>
+                <li>• 支持收藏、分享和交互功能</li>
               </ul>
             </div>
           </div>

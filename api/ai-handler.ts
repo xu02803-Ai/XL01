@@ -169,23 +169,33 @@ async function handleNewsGeneration(dateStr: string | undefined, apiKey: string,
   yesterdayDate.setDate(now.getDate() - 1);
   const yesterday = yesterdayDate.toISOString().split('T')[0];
 
-  const prompt = `You are a technology news curator. Your ONLY job is to return a JSON array. Do NOT add any explanation, markdown, or other text.
+  const prompt = `You are a professional technology news writer. Your task is to generate detailed technology news in JSON format.
 
-Generated news for: ${today} (yesterday: ${yesterday})
+Date context: ${today} (yesterday: ${yesterday})
 
-RULES:
+REQUIREMENTS:
 - ONLY news from last 48 hours
 - 6-8 stories
-- Sort by AI > Tech Giants > Semiconductors > Frontier Tech > Energy > Science
+- Each story must be DETAILED and INFORMATIVE
+- Sort by importance: AI > Tech Giants > Semiconductors > Frontier Tech > Energy > Science
 
-Return ONLY this format (no code blocks, no markdown, no explanation):
+Return ONLY this JSON format (no markdown, no code blocks, no explanation):
 [
   {
-    "headline": "NEWS HEADLINE IN CHINESE",
-    "summary": "2-3 sentences summary in Chinese",
-    "category": "CATEGORY_NAME"
+    "headline": "HEADLINE IN CHINESE (compelling and descriptive)",
+    "summary": "1-2 sentences overview in Chinese",
+    "category": "CATEGORY_NAME",
+    "content": "3-4 detailed paragraphs in Chinese explaining the news story, impacts, and significance",
+    "source": "News outlet/organization name",
+    "impact": "Describe the potential impact and significance of this news"
   }
 ]
+
+Make the 'content' field VERY DETAILED with multiple sentences covering:
+- What happened (the main event)
+- Why it matters (implications)
+- Technical details or context
+- Industry impact or future outlook
 
 START OUTPUTTING PURE JSON NOW:`;
 
