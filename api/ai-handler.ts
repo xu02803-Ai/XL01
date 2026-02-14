@@ -169,65 +169,98 @@ async function handleNewsGeneration(dateStr: string | undefined, apiKey: string,
   yesterdayDate.setDate(now.getDate() - 1);
   const yesterday = yesterdayDate.toISOString().split('T')[0];
 
-  const prompt = `Role: Editor-in-Chief for "TechPulse Daily" (每日科技脉搏).
-Task: Curate the most significant global technology news strictly for **${today}** (and late ${yesterday}).
-Language: Simplified Chinese (简体中文).
+  const prompt = `You are a technology news curator. Your ONLY job is to return a JSON array. Do NOT add any explanation, markdown, or other text.
 
-CRITICAL DATE CONSTRAINT:
-- You must ONLY include news that happened or was reported on **${yesterday}** or **${today}**.
-- **ABSOLUTELY NO NEWS OLDER THAN 48 HOURS.**
-- If a story is from last week, DISCARD IT immediately.
+Generated news for: ${today} (yesterday: ${yesterday})
 
-Priority Order:
-1. **Artificial Intelligence (AI)**: LLMs, Agents, AGI breakthroughs
-2. **Tech Giants**: Apple, Microsoft, Google, Meta, Tesla major moves
-3. **Semiconductors & Chips**: Nvidia, TSMC, Quantum Computing
-4. **Frontier Tech**: Brain-Computer Interfaces, Robotics, Bio-tech
-5. **Energy & Aerospace**: New Energy, SpaceX, Space Exploration
-6. **Fundamental Science**: Physics, Material Science, Mathematics
+RULES:
+- ONLY news from last 48 hours
+- 6-8 stories
+- Sort by AI > Tech Giants > Semiconductors > Frontier Tech > Energy > Science
 
-Instructions:
-1. Select **6 to 8 distinct stories** covering the categories above.
-2. Sort strictly by priority (AI news first).
-3. Provide detailed summary (3-5 sentences) with key facts, context, and impact.
-
-CRITICAL: Return ONLY valid JSON array (no markdown, no code blocks):
+Return ONLY this format (no code blocks, no markdown, no explanation):
 [
   {
-    "headline": "Headline in Chinese",
-    "summary": "Detailed summary in Chinese",
-    "category": "Category name (e.g. 人工智能, 芯片技术)"
+    "headline": "NEWS HEADLINE IN CHINESE",
+    "summary": "2-3 sentences summary in Chinese",
+    "category": "CATEGORY_NAME"
   }
-]`;
+]
+
+START OUTPUTTING PURE JSON NOW:`;
 
   const content = await generateText(prompt, apiKey);
   
-  // 清理 markdown 格式
+  // 🧹 高级清洁逻辑
   let jsonString = content.trim();
-  if (jsonString.includes('```json')) {
-    jsonString = jsonString.replace(/```json/g, '').replace(/```/g, '');
-  } else if (jsonString.includes('```')) {
-    jsonString = jsonString.replace(/```/g, '');
-  }
   
-  // 尝试解析 JSON
-  let newsData;
+  console.log('📝 Raw response length:', jsonString.length);
+  console.log('📝 First 400 chars:', jsonString.substring(0, 400));
+  
+  // 首先尝试直接解析，看看是否需要清理
+  let newsData: any;
   try {
     newsData = JSON.parse(jsonString);
-  } catch (e) {
-    console.error('Failed to parse news JSON:', jsonString);
-    // 返回错误但告诉前端发生了什么
-    return res.status(200).json({
-      success: false,
-      error: 'Failed to parse news data',
-      data: '[]'
-    });
+    console.log('✅ Direct parse succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
+  } catch (e1) {
+    console.warn('⚠️ Direct parse failed, attempting cleanup...');
+    
+    // 第一步：移除 Markdown 代码块
+    jsonString = jsonString.replace(/```json\s*\n?/g, '');
+    jsonString = jsonString.replace(/```\s*\n?/g, '');
+    jsonString = jsonString.replace(/\n?\s*```\s*$/g, '');
+    
+    // 第二步：提取最外层的 JSON 数组
+    const arrayStart = jsonString.indexOf('[');
+    const arrayEnd = jsonString.lastIndexOf(']');
+    
+    if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+      jsonString = jsonString.substring(arrayStart, arrayEnd + 1);
+    }
+    
+    // 第三步：处理中文引号和特殊字符
+    jsonString = jsonString.replace(/[\u201c\u201d]/g, '"');
+    jsonString = jsonString.replace(/[\u2018\u2019]/g, "'");
+    
+    console.log('🧹 After cleanup, length:', jsonString.length);
+    console.log('🧹 First 400 chars:', jsonString.substring(0, 400));
+    
+    // 尝试再次解析
+    try {
+      newsData = JSON.parse(jsonString);
+      console.log('✅ Parse after cleanup succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
+    } catch (e2) {
+      console.error('❌ Parse after cleanup failed:', (e2 as any).message);
+      console.error('   String to parse:', jsonString);
+      
+      // 最后的尝试：逐行查找问题
+      const lines = jsonString.split('\n');
+      console.error('   Total lines:', lines.length);
+      for (let i = 0; i < Math.min(10, lines.length); i++) {
+        console.error(`   Line ${i}: ${lines[i].substring(0, 100)}`);
+      }
+      
+      return res.status(200).json({
+        success: false,
+        error: 'Failed to parse news JSON: ' + (e2 as any).message,
+        hint: 'Check Vercel logs for raw content',
+        data: []
+      });
+    }
   }
-
+  
+  // 验证数据格式
+  if (!Array.isArray(newsData)) {
+    console.warn('⚠️ Parsed data is not an array, wrapping it');
+    newsData = [newsData];
+  }
+  
+  console.log('✅ Final news data has', newsData.length, 'items');
+  
   return res.status(200).json({
     success: true,
-    // 返回作为 JSON 字符串，便于前端处理
-    data: typeof newsData === 'string' ? newsData : JSON.stringify(newsData),
+    data: newsData,
+    count: newsData.length,
     model: 'gemini-2.0-flash',
     timestamp: new Date().toISOString()
   });
@@ -384,7 +417,7 @@ async function generateText(prompt: string, apiKey: string): Promise<string> {
         generationConfig: {
           temperature: 0.7,
           topP: 0.8,
-          maxOutputTokens: 2000
+          maxOutputTokens: 4000
         }
       };
 
