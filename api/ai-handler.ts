@@ -37,6 +37,43 @@ const IMAGE_MODELS = [
 export default async function handler(req: any, res: any) {
   console.log(`📨 AI Handler called: ${req.method} ${req.url}`);
   
+  // 强制在 handler 函数内部读取，确保 Vercel Runtime 已经加载变量
+  const apiKey = (process.env.GOOGLE_AI_API_KEY || '').trim();
+  
+  if (!apiKey || apiKey === 'not-configured') {
+    console.error('🔴 CRITICAL: GOOGLE_AI_API_KEY environment variable is missing or empty!');
+    console.error('   Environment variables available:', Object.keys(process.env).filter(k => k.includes('GOOGLE') || k.includes('API')));
+    
+    // 详细的诊断信息
+    const diagnostics = {
+      hasKey: !!apiKey,
+      keyLength: apiKey?.length || 0,
+      keyValue: apiKey || '[EMPTY]',
+      keyStartsCorrectly: apiKey?.startsWith('AIza') || false,
+      envVarsWithGoogle: Object.keys(process.env).filter(k => k.toUpperCase().includes('GOOGLE')),
+      envVarsWithAPI: Object.keys(process.env).filter(k => k.toUpperCase().includes('API')),
+      // 检查是否是在 Vercel 运行
+      isVercel: !!process.env.VERCEL,
+      vercelEnv: process.env.VERCEL_ENV || 'unknown',
+      // 显示所有包含 KEY 的变量名
+      allKeyVariables: Object.keys(process.env).filter(k => k.toUpperCase().includes('KEY'))
+    };
+    
+    return res.status(500).json({
+      success: false,
+      error: 'Vercel Environment Variable GOOGLE_AI_API_KEY is missing or empty!',
+      debug: diagnostics,
+      checklist: {
+        step1: '检查 Vercel 控制面板 > Settings > Environment Variables',
+        step2: '确保变量名完全是：GOOGLE_AI_API_KEY（区分大小写）',
+        step3: '确保勾选了 Production、Preview、Development 三个环境',
+        step4: '点击 Redeploy 重新部署（不使用缓存）',
+        step5: '等待 2-3 分钟后重试'
+      },
+      documentation: 'https://github.com/你的项目/VERCEL_ENV_CHECKLIST.md'
+    });
+  }
+  
   // 检查 Gemini 客户端是否初始化成功
   if (!genAI) {
     console.error('🔴 Gemini client not initialized!');
@@ -300,13 +337,23 @@ interface GeminiResponse {
  * 使用 Gemini v1beta REST API 生成文本（支持 -latest 后缀和 gemini-2.0 模型）
  * v1beta 是支持最新模型和前沿功能的推荐通道
  */
-async function generateText(prompt: string): Promise<string> {
+async function generateText(prompt: string, apiKey?: string): Promise<string> {
   if (!prompt) {
     throw new Error('Prompt is required');
   }
 
-  const apiKey = process.env.GOOGLE_AI_API_KEY;
-  if (!apiKey) {
+  // 如果没有传入 API Key，尝试从环境变量读取
+  const key = apiKey || (process.env.GOOGLE_AI_API_KEY || '').trim();
+  
+  if (!key || key === 'not-configured') {
+    console.error('🔴 generateText: API Key is missing or empty!');
+    console.error('   Environment variable name it should be: GOOGLE_AI_API_KEY');
+    console.error('   Current value:', {
+      hasKey: !!key,
+      keyLength: key?.length || 0,
+      keyStartsCorrectly: key?.startsWith('AIza') || false,
+      isNotConfigured: key === 'not-configured'
+    });
     throw new Error('GOOGLE_AI_API_KEY not configured');
   }
 
@@ -317,7 +364,7 @@ async function generateText(prompt: string): Promise<string> {
       console.log(`🚀 Calling Gemini v1beta REST API: ${model}`);
       
       // 使用 v1beta API（支持 -latest 后缀和 gemini-2.0 模型）
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
       
       const requestBody = {
         contents: [
