@@ -9,8 +9,8 @@ if (!process.env.GOOGLE_AI_API_KEY) {
 // 初始化 Gemini 客户端
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || 'not-configured');
 
-// 支持的模型列表
-const TEXT_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
+// 支持的模型列表 (仅使用稳定且公开可用的模型)
+const TEXT_MODELS = ['gemini-1.5-flash', 'gemini-2.0-flash'];
 const IMAGE_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'];
 
 /**
