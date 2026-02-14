@@ -19,9 +19,17 @@ try {
   console.error('❌ Failed to initialize Gemini client:', error);
 }
 
-// 支持的模型列表 (使用最新别名以确保 API 兼容性)
-const TEXT_MODELS = ['gemini-1.5-flash-latest', 'gemini-2.0-flash-001'];
-const IMAGE_MODELS = ['gemini-2.0-flash-001', 'gemini-1.5-flash-latest'];
+// 支持的模型列表 (按优先顺序，v1beta 兼容)
+const TEXT_MODELS = [
+  'gemini-1.5-flash',        // 最稳定
+  'gemini-1.5-flash-latest',
+  'gemini-2.0-flash-exp'     // 2.0 模型在 beta 通道
+];
+const IMAGE_MODELS = [
+  'gemini-2.0-flash-exp',
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-latest'
+];
 
 /**
  * 统一 AI 处理器 - 处理文本、图片、语音等生成任务
@@ -274,8 +282,8 @@ async function handleSpeechSynthesis(text: string, voice: string = 'female', res
 }
 
 /**
- * 使用 Gemini v1 REST API 生成文本（强制使用正式版 v1 而非 v1beta）
- * 这绕过了 SDK 可能的 v1beta 限制
+ * 使用 Gemini v1beta REST API 生成文本（支持 -latest 后缀和 gemini-2.0 模型）
+ * v1beta 是支持最新模型和前沿功能的推荐通道
  */
 async function generateText(prompt: string): Promise<string> {
   if (!prompt) {
@@ -291,10 +299,10 @@ async function generateText(prompt: string): Promise<string> {
 
   for (const model of TEXT_MODELS) {
     try {
-      console.log(`🚀 Calling Gemini v1 REST API: ${model}`);
+      console.log(`🚀 Calling Gemini v1beta REST API: ${model}`);
       
-      // 使用 v1 正式版 API 而非 v1beta
-      const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
+      // 使用 v1beta API（支持 -latest 后缀和 gemini-2.0 模型）
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
       
       const requestBody = {
         contents: [
