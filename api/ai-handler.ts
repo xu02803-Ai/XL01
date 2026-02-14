@@ -204,98 +204,37 @@ START OUTPUTTING PURE JSON NOW:`;
 
   const content = await generateText(prompt, apiKey);
   
-  // 🧹 高级清洁逻辑
-  let jsonString = content.trim();
+  console.log('📝 Raw response length:', content.length);
+  console.log('📝 First 200 chars:', content.substring(0, 200));
   
-  console.log('📝 Raw response length:', jsonString.length);
-  console.log('📝 First 400 chars:', jsonString.substring(0, 400));
-  
-  // 首先尝试直接解析，看看是否需要清理
+  // 使用强化的 JSON 修复逻辑
   let newsData: any;
   try {
-    newsData = JSON.parse(jsonString);
-    console.log('✅ Direct parse succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
-  } catch (e1) {
-    console.warn('⚠️ Direct parse failed, attempting cleanup...');
+    newsData = parseAndFixJson(content);
+    console.log('✅ JSON parse succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
+  } catch (e: any) {
+    console.error('❌ JSON parsing completely failed:', e.message);
+    console.error('Full error details:', e);
     
-    // 第一步：移除 Markdown 代码块
-    jsonString = jsonString.replace(/```json\s*\n?/g, '');
-    jsonString = jsonString.replace(/```\s*\n?/g, '');
-    jsonString = jsonString.replace(/\n?\s*```\s*$/g, '');
-    
-    // 第二步：提取最外层的 JSON 数组
-    const arrayStart = jsonString.indexOf('[');
-    const arrayEnd = jsonString.lastIndexOf(']');
-    
-    if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
-      jsonString = jsonString.substring(arrayStart, arrayEnd + 1);
-    }
-    
-    // 第三步：处理中文引号
-    jsonString = jsonString.replace(/[\u201c\u201d]/g, '"');
-    jsonString = jsonString.replace(/[\u2018\u2019]/g, "'");
-    
-    // 第四步：处理嵌入的换行符和特殊字符
-    // 这是关键步骤：把 JSON 中间可能的实际换行符替换成 \n
-    // 但要保证只在字符串值中做替换，不破坏 JSON 结构
-    try {
-      // 先尝试用正则表达式修复可能的换行符问题
-      // 匹配 "key": "值" 的模式，把其中的换行符转义
-      jsonString = jsonString.replace(/"([^"]*?)":\s*"([^"]*?)"/g, (match, key, value) => {
-        // 对 value 中的换行符进行转义
-        const escapedValue = value
-          .replace(/\n/g, '\\n')
-          .replace(/\r/g, '\\r')
-          .replace(/\t/g, '\\t')
-          .replace(/"/g, '\\"');
-        return `"${key}": "${escapedValue}"`;
-      });
-    } catch (e) {
-      console.warn('⚠️ Regex replacement failed:', (e as any).message);
-    }
-    
-    console.log('🧹 After cleanup, length:', jsonString.length);
-    console.log('🧹 First 400 chars:', jsonString.substring(0, 400));
-    
-    // 尝试再次解析
-    try {
-      newsData = JSON.parse(jsonString);
-      console.log('✅ Parse after cleanup succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
-    } catch (e2) {
-      console.error('❌ Parse after cleanup failed:', (e2 as any).message);
-      console.error('   Problem at position 104 approximately');
-      console.error('   String around position 104:', jsonString.substring(Math.max(0, 100), 110));
-      
-      // 尝试手动 JSON 修复：替换所有实际换行符为 \n
-      const fixedJson = jsonString
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .join('')
-        .replace(/,\s*}/g, '}')
-        .replace(/,\s*]/g, ']');
-      
-      console.log('🔧 Attempting fixed JSON:', fixedJson.substring(0, 150));
-      
-      try {
-        newsData = JSON.parse(fixedJson);
-        console.log('✅ Fixed JSON parse succeeded! Items:', Array.isArray(newsData) ? newsData.length : 'unknown');
-      } catch (e3) {
-        console.error('❌ Even fixed JSON failed:', (e3 as any).message);
-        
-        return res.status(200).json({
-          success: false,
-          error: 'Failed to parse news JSON: ' + (e3 as any).message,
-          hint: 'JSON format error - check raw content in logs',
-          data: []
-        });
-      }
-    }
+    return res.status(200).json({
+      success: false,
+      error: 'Failed to parse news JSON: ' + e.message,
+      hint: 'The API response contained malformed JSON that could not be repaired',
+      rawContentPreview: content.substring(0, 500),
+      data: []
+    });
   }
+  
+  // 验证数据
+  if (!Array.isArray(newsData)) {
+    console.warn('⚠️ Parsed data is not an array, wrapping it');
+    newsData = [newsData];
+  }
+  
+  console.log('✅ Final validated news data has', newsData.length, 'items');
   
   return res.status(200).json({
     success: true,
-    // 返回 JSON 字符串（前端期望的格式）
     data: JSON.stringify(newsData),
     count: Array.isArray(newsData) ? newsData.length : 1,
     model: 'gemini-2.0-flash',
@@ -422,32 +361,110 @@ async function handleSpeechSynthesis(text: string, voice: string = 'female', api
 }
 
 /**
- * Gemini 图像生成响应类型定义
+ * 清理并修复 JSON 字符串中的特殊字符
  */
-interface GeminiImageResponse {
-  images?: Array<{
-    data?: string;
-    uri?: string;
-  }>;
-  error?: {
-    message?: string;
-    code?: number;
-  };
+function sanitizeJsonString(str: string): string {
+  return str
+    .replace(/\\/g, '\\\\')  // 先转义反斜杠
+    .replace(/"/g, '\\"')    // 转义引号
+    .replace(/\n/g, '\\n')   // 转义换行
+    .replace(/\r/g, '\\r')   // 转义回车
+    .replace(/\t/g, '\\t')   // 转义制表符
+    .replace(/\v/g, '\\v')   // 转义垂直制表符
+    .replace(/\f/g, '\\f');  // 转义换页符
 }
 
 /**
- * Gemini API 响应类型定义
+ * 修复 JSON 中损坏的字符串值
  */
-interface GeminiResponse {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{ text?: string }>;
-    };
-  }>;
-  error?: {
-    message?: string;
-    code?: number;
-  };
+function fixJsonStringValues(jsonStr: string): string {
+  // 匹配 "key": "value" 的模式
+  // 但要小心处理值中已经转义的引号
+  return jsonStr.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"\s*:\s*"([^"]*)"/g, (match, key, value) => {
+    // 对 key 和 value 进行清理
+    const cleanedKey = key;
+    const cleanedValue = sanitizeJsonString(value
+      .replace(/\\"/g, '') // 移除已有的转义引号，然后重新转义
+    );
+    return `"${cleanedKey}": "${cleanedValue}"`;
+  });
+}
+
+/**
+ * 尝试修复并解析 JSON
+ */
+function parseAndFixJson(jsonString: string): any {
+  // 第一步：直接尝试解析
+  try {
+    return JSON.parse(jsonString);
+  } catch (e1: any) {
+    console.warn('⚠️ Direct parse failed:', e1.message, 'at position', e1.message.match(/position (\d+)/)?.[1]);
+  }
+  
+  // 第二步：移除 Markdown 代码块
+  let fixed = jsonString
+    .replace(/```json\s*\n?/g, '')
+    .replace(/```\s*\n?/g, '')
+    .replace(/\n?\s*```\s*$/g, '');
+  
+  try {
+    return JSON.parse(fixed);
+  } catch (e2: any) {
+    console.warn('⚠️ Parse after removing markdown failed');
+  }
+  
+  // 第三步：提取最外层的 JSON 数组
+  const arrayStart = fixed.indexOf('[');
+  const arrayEnd = fixed.lastIndexOf(']');
+  
+  if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+    fixed = fixed.substring(arrayStart, arrayEnd + 1);
+  }
+  
+  try {
+    return JSON.parse(fixed);
+  } catch (e3: any) {
+    console.warn('⚠️ Parse after extraction failed');
+  }
+  
+  // 第四步：处理特殊字符
+  fixed = fixed
+    .replace(/[\u201c\u201d]/g, '"')  // 中文双引号
+    .replace(/[\u2018\u2019]/g, "'") // 中文单引号
+    .replace(/\u3001/g, ',')         // 中文顿号
+    .replace(/\u3002/g, '.');        // 中文句号
+  
+  try {
+    return JSON.parse(fixed);
+  } catch (e4: any) {
+    console.warn('⚠️ Parse after special char replacement failed');
+  }
+  
+  // 第五步：尝试修复字符串值中的问题
+  fixed = fixJsonStringValues(fixed);
+  
+  try {
+    return JSON.parse(fixed);
+  } catch (e5: any) {
+    console.warn('⚠️ Parse after string value fix failed');
+  }
+  
+  // 第六步：终极修复：将所有内容折叠成单行
+  const lines = fixed.split('\n');
+  fixed = lines
+    .map(line => line.trim())
+    .filter(line => line.length > 0 && !line.startsWith('//'))
+    .join('')
+    .replace(/,\s*}/g, '}')
+    .replace(/,\s*]/g, ']');
+  
+  try {
+    return JSON.parse(fixed);
+  } catch (e6: any) {
+    console.error('❌ All JSON repair attempts failed');
+    console.error('Position of error:', e6.message.match(/position (\d+)/)?.[1]);
+    throw new Error('Unable to parse JSON after all repair attempts: ' + e6.message);
+  }
 }
 
 /**
