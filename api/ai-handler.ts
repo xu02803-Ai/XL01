@@ -1,13 +1,23 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+console.log('🚀 AI Handler module loading...');
+
 // 验证 API Key
 if (!process.env.GOOGLE_AI_API_KEY) {
   console.error('❌ GOOGLE_AI_API_KEY environment variable is not set!');
   console.error('   Get one from: https://aistudio.google.com/app/apikey');
+} else {
+  console.log('✅ GOOGLE_AI_API_KEY is set, length:', process.env.GOOGLE_AI_API_KEY.length);
 }
 
 // 初始化 Gemini 客户端
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || 'not-configured');
+let genAI: any;
+try {
+  genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || 'not-configured');
+  console.log('✅ Gemini client initialized successfully');
+} catch (error) {
+  console.error('❌ Failed to initialize Gemini client:', error);
+}
 
 // 支持的模型列表 (仅使用稳定且公开可用的模型)
 const TEXT_MODELS = ['gemini-1.5-flash', 'gemini-2.0-flash'];
@@ -17,6 +27,18 @@ const IMAGE_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash'];
  * 统一 AI 处理器 - 处理文本、图片、语音等生成任务
  */
 export default async function handler(req: any, res: any) {
+  console.log(`📨 AI Handler called: ${req.method} ${req.url}`);
+  
+  // 检查 Gemini 客户端是否初始化成功
+  if (!genAI) {
+    console.error('🔴 Gemini client not initialized!');
+    return res.status(500).json({
+      success: false,
+      error: 'Gemini client initialization failed',
+      details: 'Check GOOGLE_AI_API_KEY environment variable'
+    });
+  }
+  
   // CORS 配置
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
