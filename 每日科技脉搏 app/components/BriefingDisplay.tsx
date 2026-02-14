@@ -9,6 +9,7 @@ interface BriefingDisplayProps {
   data: DailyBriefingData;
   savedHeadlines: Set<string>;
   onToggleBookmark: (item: NewsItem, imageUrl?: string) => void;
+  onViewDetail?: (item: NewsItem) => void;
 }
 
 // --- Helper: Decode Raw PCM ---
@@ -62,7 +63,8 @@ const NewsCard: React.FC<{
   onPlay: () => void;
   onToggleBookmark: (imageUrl?: string) => void;
   onShare: () => void;
-}> = ({ item, index, isActive, isPlaying, isSaved, onPlay, onToggleBookmark, onShare }) => {
+  onViewDetail: () => void;
+}> = ({ item, index, isActive, isPlaying, isSaved, onPlay, onToggleBookmark, onShare, onViewDetail }) => {
   // Use cached image URL if available, otherwise start null
   const [imageUrl, setImageUrl] = useState<string | null>(item.imageUrl || null);
   const [loadingImg, setLoadingImg] = useState(!item.imageUrl);
@@ -113,7 +115,7 @@ const NewsCard: React.FC<{
         </div>
 
         {/* Content Section */}
-        <div className="sm:w-2/3 p-5 flex flex-col relative">
+        <div className="sm:w-2/3 p-5 flex flex-col relative cursor-pointer" onClick={onViewDetail}>
           <div className="flex-1">
             <h3 className={`text-lg font-bold mb-3 leading-tight ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-900 dark:text-slate-100 group-hover:text-blue-600 dark:group-hover:text-blue-200'} transition-colors`}>
                 {item.headline}
@@ -203,7 +205,7 @@ const NewsCard: React.FC<{
 };
 
 // --- Main Component ---
-const BriefingDisplay: React.FC<BriefingDisplayProps> = ({ data, savedHeadlines, onToggleBookmark }) => {
+const BriefingDisplay: React.FC<BriefingDisplayProps> = ({ data, savedHeadlines, onToggleBookmark, onViewDetail }) => {
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loadingAudio, setLoadingAudio] = useState(false);
@@ -525,7 +527,7 @@ const BriefingDisplay: React.FC<BriefingDisplayProps> = ({ data, savedHeadlines,
         <div className="grid grid-cols-1 gap-6">
             {data.news.map((item, idx) => (
             <NewsCard 
-                key={`${item.headline}-${idx}`} // Use index fallback for uniqueness
+                key={`${item.headline}-${idx}`}
                 item={item} 
                 index={idx}
                 isActive={activeIndex === idx}
@@ -534,6 +536,7 @@ const BriefingDisplay: React.FC<BriefingDisplayProps> = ({ data, savedHeadlines,
                 onPlay={() => handlePlayToggle(idx)}
                 onToggleBookmark={(imgUrl) => handleBookmarkClick(item, imgUrl)}
                 onShare={() => openShareModal(item)}
+                onViewDetail={() => onViewDetail?.(item)}
             />
             ))}
         </div>

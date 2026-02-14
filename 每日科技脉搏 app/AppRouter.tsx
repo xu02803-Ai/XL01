@@ -3,27 +3,34 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
 import ProfilePage from './pages/ProfilePage';
 import SubscriptionPage from './pages/SubscriptionPage';
+import NewsDetailPage from './pages/NewsDetailPage';
 import MainApp from './MainApp';
+import { NewsItem } from './types';
 
-type PageType = 'main' | 'login' | 'profile' | 'subscription';
+type PageType = 'main' | 'login' | 'profile' | 'subscription' | 'newsDetail';
+
+interface NavigationParams {
+  newsData?: NewsItem & { date?: string };
+}
 
 const AppRouter: React.FC = () => {
   const { isAuthenticated, loading } = useAuth();
   const [currentPage, setCurrentPage] = useState<PageType>('main');
+  const [navParams, setNavParams] = useState<NavigationParams>({});
 
   useEffect(() => {
     // Parse URL hash for routing
     const hash = window.location.hash.slice(1) || 'main';
-    if (hash === 'login' || hash === 'profile' || hash === 'subscription') {
+    if (hash === 'login' || hash === 'profile' || hash === 'subscription' || hash === 'newsDetail') {
       setCurrentPage(hash as PageType);
     } else {
       setCurrentPage('main');
     }
 
-    // Update URL when page changes
+    // Update URL when hashchange
     const handleHashChange = () => {
       const hash = window.location.hash.slice(1) || 'main';
-      if (hash === 'login' || hash === 'profile' || hash === 'subscription') {
+      if (hash === 'login' || hash === 'profile' || hash === 'subscription' || hash === 'newsDetail') {
         setCurrentPage(hash as PageType);
       } else {
         setCurrentPage('main');
@@ -34,9 +41,12 @@ const AppRouter: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const navigate = (page: PageType) => {
-    setCurrentPage(page);
-    window.location.hash = page === 'main' ? '' : page;
+  const navigate = (page: PageType | string, params?: NavigationParams) => {
+    // Handle both string and PageType
+    const validPage = (page as PageType);
+    setCurrentPage(validPage);
+    setNavParams(params || {});
+    window.location.hash = validPage === 'main' ? '' : validPage;
   };
 
   if (loading) {
@@ -69,6 +79,8 @@ const AppRouter: React.FC = () => {
       return <ProfilePage onNavigate={navigate} />;
     case 'subscription':
       return <SubscriptionPage onNavigate={navigate} />;
+    case 'newsDetail':
+      return <NewsDetailPage onNavigate={navigate} newsData={navParams.newsData} />;
     case 'main':
     default:
       return <MainApp onNavigate={navigate} />;

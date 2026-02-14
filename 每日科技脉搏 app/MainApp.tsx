@@ -6,7 +6,7 @@ import { useAuth } from './contexts/AuthContext';
 import { DailyBriefingData, AppState, ViewMode, NewsItem, Theme } from './types';
 
 interface MainAppProps {
-  onNavigate: (page: 'main' | 'profile' | 'subscription') => void;
+  onNavigate: (page: 'main' | 'profile' | 'subscription' | 'newsDetail' | string, params?: any) => void;
 }
 
 const MainApp: React.FC<MainAppProps> = ({ onNavigate }) => {
@@ -275,6 +275,10 @@ const MainApp: React.FC<MainAppProps> = ({ onNavigate }) => {
                     data={displayData} 
                     savedHeadlines={savedHeadlines}
                     onToggleBookmark={handleToggleBookmark}
+                    onViewDetail={(item) => {
+                      localStorage.setItem('selectedNews', JSON.stringify(item));
+                      onNavigate('newsDetail' as any, { newsData: item });
+                    }}
                  />
               </div>
 
