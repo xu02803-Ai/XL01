@@ -282,6 +282,21 @@ async function handleSpeechSynthesis(text: string, voice: string = 'female', res
 }
 
 /**
+ * Gemini API 响应类型定义
+ */
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
+  error?: {
+    message?: string;
+    code?: number;
+  };
+}
+
+/**
  * 使用 Gemini v1beta REST API 生成文本（支持 -latest 后缀和 gemini-2.0 模型）
  * v1beta 是支持最新模型和前沿功能的推荐通道
  */
@@ -331,7 +346,7 @@ async function generateText(prompt: string): Promise<string> {
         body: JSON.stringify(requestBody)
       });
 
-      const responseData = await response.json();
+      const responseData = (await response.json()) as GeminiResponse;
 
       if (!response.ok) {
         const errorMsg = responseData?.error?.message || `HTTP ${response.status}`;
