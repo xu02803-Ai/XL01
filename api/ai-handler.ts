@@ -270,28 +270,42 @@ async function handleImageGeneration(headline: string, apiKey: string, res: any)
     });
   }
 
-  if (!apiKey) {
+  try {
+    console.log("🖼️ Generating image for headline:", headline.substring(0, 50));
+    
+    // 方案1：使用免费的 Pollinations.ai API 直接生成图片
+    // 这是最快最简单的方式，无需额外的 API Key
+    const encodedHeadline = encodeURIComponent(headline);
+    const pollsUrl = `https://image.pollinations.ai/prompt/${encodedHeadline}?width=600&height=400&seed=${Date.now()}`;
+    
+    console.log("📸 Using Pollinations.ai URL:", pollsUrl);
+    
+    // 验证 URL 可访问性（可选的轻量检查）
+    try {
+      const headCheck = await fetch(pollsUrl, { method: 'HEAD', timeout: 5000 });
+      if (headCheck.ok) {
+        console.log("✅ Image URL verified, using:", pollsUrl);
+      }
+    } catch (e) {
+      console.warn("⚠️ HEAD request failed, will try direct URL:", (e as any).message);
+    }
+    
+    return res.status(200).json({
+      success: true,
+      imageUrl: pollsUrl,  // 前端期望的字段
+      headline,
+      model: 'pollinations-ai',
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error("❌ Image generation error:", error);
     return res.status(500).json({
       success: false,
-      error: 'GOOGLE_AI_API_KEY not configured'
+      error: 'Failed to generate image',
+      details: (error as any).message
     });
   }
-
-  // 使用 Gemini 生成图片提示词
-  const prompt = `Given the news headline: "${headline}"
-Generate a vivid, descriptive image prompt suitable for AI image generation (like DALL-E, Midjourney).
-The prompt should be 1-2 sentences, creative, and visually evocative.
-Return ONLY the image prompt, no additional text.`;
-
-  const imagePrompt = await generateText(prompt, apiKey);
-  
-  return res.status(200).json({
-    success: true,
-    data: imagePrompt.trim(),
-    headline,
-    model: 'gemini-2.0-flash',
-    timestamp: new Date().toISOString()
-  });
 }
 
 /**
