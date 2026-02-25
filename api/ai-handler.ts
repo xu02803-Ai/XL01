@@ -350,6 +350,9 @@ function generateFallbackNews() {
 }
 
 /**
+ * 处理图片生成 - 使用多源图片生成【改进】
+ * 支持：1) 高质量AI生成图片 2) 真实照片搜索 3) 科技相关图片库
+ */
 async function handleImageGeneration(headline: string, summary: string = '', category: string = '', apiKey: string, res: any) {
   if (!headline) {
     return res.status(400).json({
