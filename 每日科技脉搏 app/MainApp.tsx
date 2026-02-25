@@ -11,8 +11,35 @@ interface MainAppProps {
 
 const MainApp: React.FC<MainAppProps> = ({ onNavigate }) => {
   const { subscription } = useAuth();
-  const [appState, setAppState] = useState<AppState>(AppState.IDLE);
-  const [briefingData, setBriefingData] = useState<DailyBriefingData | null>(null);
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Initialize briefingData from cache
+  const [briefingData, setBriefingData] = useState<DailyBriefingData | null>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('techpulse_dailyNews');
+      if (cached) {
+        try {
+          const data = JSON.parse(cached);
+          // Verify cache is for today
+          if (data.date === today) {
+            return data;
+          }
+        } catch (e) {
+          console.warn('Failed to parse cached news');
+        }
+      }
+    }
+    return null;
+  });
+
+  // Initialize appState based on cached data
+  const [appState, setAppState] = useState<AppState>(() => {
+    if (briefingData) {
+      return AppState.SUCCESS;
+    }
+    return AppState.IDLE;
+  });
+
   const [errorMsg, setErrorMsg] = useState<string>('');
   
   // View State
@@ -38,8 +65,6 @@ const MainApp: React.FC<MainAppProps> = ({ onNavigate }) => {
   const [chatQuestion, setChatQuestion] = useState('');
   const [chatAnswer, setChatAnswer] = useState('');
   const [isChatting, setIsChatting] = useState(false);
-
-  const today = new Date().toISOString().split('T')[0];
 
   // Apply Theme Effect
   useEffect(() => {
@@ -74,6 +99,26 @@ const MainApp: React.FC<MainAppProps> = ({ onNavigate }) => {
     localStorage.setItem('techpulse_saved', JSON.stringify(savedNews));
   }, [savedNews]);
 
+  // Load cached news on mount and when returning from detail view
+  useEffect(() => {
+    if (!briefingData && appState === AppState.IDLE) {
+      // Try to load from cache
+      const cached = localStorage.getItem('techpulse_dailyNews');
+      if (cached) {
+        try {
+          const data = JSON.parse(cached);
+          if (data.date === today) {
+            console.log("📦 Loaded news from cache");
+            setBriefingData(data);
+            setAppState(AppState.SUCCESS);
+          }
+        } catch (e) {
+          console.warn('Failed to load cached news');
+        }
+      }
+    }
+  }, [today]);
+
   const handleGenerateNews = async () => {
     setViewMode('daily'); // Switch to daily view on generate
     setAppState(AppState.LOADING);
@@ -89,6 +134,8 @@ const MainApp: React.FC<MainAppProps> = ({ onNavigate }) => {
         throw new Error("暂无新闻。请检查 API 配置或稍后重试。");
       }
       console.log("✅ News generation successful, items:", data.news.length);
+      // Cache the news data for the day
+      localStorage.setItem('techpulse_dailyNews', JSON.stringify(data));
       setBriefingData(data);
       setAppState(AppState.SUCCESS);
     } catch (err: any) {
