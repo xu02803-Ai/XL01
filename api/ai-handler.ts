@@ -276,7 +276,8 @@ START OUTPUTTING PURE JSON NOW:`;
 }
 
 /**
- * 处理图片生成 - 使用高级视觉提示词 + Pollinations.ai
+ * 处理图片生成 - 使用多源图片生成【改进】
+ * 支持：1) 高质量AI生成图片 2) 真实照片搜索 3) 科技相关图片库
  */
 async function handleImageGeneration(headline: string, summary: string = '', category: string = '', apiKey: string, res: any) {
   if (!headline) {
@@ -296,78 +297,358 @@ async function handleImageGeneration(headline: string, summary: string = '', cat
       });
     }
     
-    // 使用 Gemini 生成高质量的视觉提示词
-    const promptForImageGeneration = `You are an expert visual artist and prompt engineer. Based on this tech news:
-
-Headline: "${headline}"
-Category: "${category}"
-Summary: "${summary}"
-
-Generate a HIGHLY DETAILED and VIVID image prompt in English that:
-1. Captures the essence of the tech innovation
-2. Includes specific visual elements (colors, composition, style, lighting)
-3. Is suitable for high-quality AI image generation
-4. Should be cinematic, professional, and visually striking
-5. 2-3 sentences max, but VERY descriptive
-
-Focus on:
-- What should be in the image (main subject, background, elements)
-- Visual style (modern, futuristic, professional, detailed, cinematic)
-- Colors and atmosphere
-- Composition and perspective
-
-Example quality level: "A sleek, futuristic AI server farm with holographic interfaces glowing softly, surrounded by flowing data streams in blue and purple hues, cinematic lighting, 8K professional photography style"
-
-Return ONLY the vivid image prompt, no additional text or explanation.`;
-
-    console.log("📝 Generating detailed image prompt from news...");
-    const imagePrompt = await generateText(promptForImageGeneration, apiKey);
-    const cleanedPrompt = imagePrompt.trim();
+    // 第一阶段：生成超精细的AI图片提示词
+    const imagePrompt = await generateEnhancedImagePrompt(headline, summary, category, apiKey);
     
-    console.log("✅ Generated detailed image prompt:", cleanedPrompt.substring(0, 150));
-    
-    // 使用 Pollinations.ai 生成高质量图片
-    // 这是一个免费的、经过验证的图像生成服务
-    const encodedPrompt = encodeURIComponent(cleanedPrompt);
-    const pollsUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=800&height=500&enhance=true&seed=${Date.now()}`;
-    
-    console.log("📸 Generating image with Pollinations.ai...");
-    
-    // 验证 URL 可访问性
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      try {
-        const headCheck = await fetch(pollsUrl, { method: 'HEAD', signal: controller.signal });
-        if (!headCheck.ok) {
-          console.warn("⚠️ HEAD check failed, but will try full URL");
-        }
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    } catch (e) {
-      console.warn("⚠️ Accessibility check failed, continuing with direct URL");
+    if (!imagePrompt) {
+      console.warn("⚠️ Failed to generate image prompt, using fallback");
+      return generateFallbackImage(headline, category, res);
     }
     
-    console.log("✅ Image URL generated successfully");
+    console.log("✅ Generated detailed image prompt:", imagePrompt.substring(0, 150));
+    
+    // 第二阶段：使用多个服务生成图片（按优先级）
+    const candidates = [
+      // 1. 高质量AI生成（Pollinations）- 需要优质提示词
+      async () => generatePollImage(imagePrompt),
+      // 2. 通过搜索获取真实照片（SerpAPI + Pixabay）
+      async () => generateRealImage(headline, category),
+      // 3. 科技相关图片库 (Unsplash)
+      async () => generateUnsplashImage(headline),
+      // 4. Unicode艺术/占位图（最后的备用）
+      async () => generatePlaceholderImage(headline, category)
+    ];
+    
+    // 尝试每个候选项，找到第一个成功的
+    let imageUrl: string | null = null;
+    let usedSource: string = 'unknown';
+    
+    for (let i = 0; i < candidates.length; i++) {
+      try {
+        const result = (await Promise.race([
+          candidates[i](),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Timeout')), 8000)
+          )
+        ])) as { success: boolean; url: string; source: string } | null;
+        
+        if (result && result.success) {
+          imageUrl = result.url;
+          usedSource = result.source;
+          console.log(`✅ Image generated successfully from ${result.source}`);
+          break;
+        }
+      } catch (e: any) {
+        console.warn(`⚠️ Image source ${i + 1} failed:`, e.message);
+        // 继续尝试下一个源
+      }
+    }
+    
+    // 如果所有来源都失败了，返回合理的备用方案
+    if (!imageUrl) {
+      console.warn("⚠️ All image sources failed, using gradient placeholder");
+      imageUrl = generateGradientPlaceholder(category);
+      usedSource = 'gradient-fallback';
+    }
     
     return res.status(200).json({
       success: true,
-      imageUrl: pollsUrl,
+      imageUrl,
       headline,
-      imagePrompt: cleanedPrompt,
-      model: 'gemini-2.0-flash (prompt) + pollinations-ai (generation)',
+      imagePrompt,
+      source: usedSource,
+      model: 'gemini-2.0-flash (prompt) + multi-source (generation)',
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
     console.error("❌ Image generation error:", error);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to generate image',
-      details: (error as any).message
+    // 返回可靠的备用方案而不是失败
+    return res.status(200).json({
+      success: true,
+      imageUrl: generateGradientPlaceholder(category),
+      headline,
+      source: 'error-gradient-fallback',
+      error: 'Primary image generation failed, using fallback'
     });
   }
+}
+
+/**
+ * 生成超精细AI图片提示词
+ */
+async function generateEnhancedImagePrompt(headline: string, summary: string, category: string, apiKey: string): Promise<string | null> {
+  try {
+    const categoryDescriptions: Record<string, string> = {
+      'AI': '人工智能、深度学习、大模型、机器学习',
+      'Tech': '科技、软件、硬件、互联网',
+      'Semiconductors': '芯片、处理器、电子元件',
+      'Energy': '能源、清洁能源、电池技术',
+      'Science': '科学研究、物理、化学',
+      'default': '现代科技、创新、未来'
+    };
+    
+    const categoryHint = categoryDescriptions[category] || categoryDescriptions['default'];
+    
+    const detailedPrompt = `You are a world-class AI image prompt engineer for generating stunning, photorealistic tech news imagery. 
+
+HEADLINE: "${headline}"
+CATEGORY: ${categoryHint}
+SUMMARY: "${summary}"
+
+Create an ULTRA-DETAILED and CONCRETE image prompt that:
+
+1. VISUAL REALISM: Make it look like professional photography or cinematic rendering
+2. TECHNICAL ACCURACY: Ensure the image reflects the actual tech/topic
+3. COMPELLING COMPOSITION: Include specific elements, angles, lighting
+4. EMOTIONAL IMPACT: Inspire innovation and wonder
+5. DETAIL LEVEL: Include colors, materials, lighting, depth, atmosphere
+
+Requirements:
+- 3-4 sentences, vivid and specific
+- Include: (subject), (setting/background), (style/lighting), (mood/atmosphere)
+- Use specific technical terms related to the news
+- Mention specific materials, colors, and compositions
+- Reference photographic/cinematic techniques
+- NO abstract concepts - everything must be visually concrete
+
+Example output quality:
+"A cutting-edge AI data center with rows of glowing quantum processors emitting soft blue and purple bioluminescence, advanced cooling systems with flowing liquid nitrogen, sleek black and metallic surfaces, cinematic perspective with dramatic god rays penetrating from skylights, professional 8K photography with HDR lighting, shot on a RED camera"
+
+NOW GENERATE ONLY THE IMAGE PROMPT - no explanations, no disclaimers, pure descriptive prompt:`;
+
+    const prompt = await generateText(detailedPrompt, apiKey);
+    return prompt.trim().substring(0, 500); // 将结果限制为500个字符
+  } catch (e) {
+    console.error("Failed to generate enhanced prompt:", e);
+    return null;
+  }
+}
+
+/**
+ * 使用 Pollinations.ai 生成AI图片
+ */
+async function generatePollImage(prompt: string): Promise<{ success: boolean; url: string; source: string } | null> {
+  try {
+    // 对提示词进行优化编码
+    const cleanPrompt = prompt
+      .replace(/[^a-zA-Z0-9\s,.\-:()]/g, ' ')  // 移除特殊字符
+      .substring(0, 300);  // 限制长度
+    
+    const encodedPrompt = encodeURIComponent(cleanPrompt);
+    const seed = Math.floor(Math.random() * 1000000);
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=576&enhance=true&nologo=true&seed=${seed}`;
+    
+    // 验证URL是否可访问
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      
+      const testFetch = await fetch(imageUrl, { 
+        method: 'HEAD', 
+        signal: controller.signal,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      clearTimeout(timeoutId);
+      
+      if (testFetch.status === 200 || testFetch.status === 405) { // 405是HEAD不支持，但说明URL有效
+        console.log("✅ Pollinations image URL verified");
+        return { success: true, url: imageUrl, source: 'Pollinations.ai' };
+      }
+    } catch (e: any) {
+      console.warn("⚠️ Pollinations access check failed:", e.message);
+      return null;
+    }
+    
+  } catch (error) {
+    console.error("❌ Pollinations generation failed:", error);
+    return null;
+  }
+}
+
+/**
+ * 获取真实照片（使用搜索）
+ */
+async function generateRealImage(headline: string, category: string): Promise<{ success: boolean; url: string; source: string } | null> {
+  try {
+    // 提取关键词
+    const keywords = headline.split(/\s+/).slice(0, 5).join(' ');
+    
+    // 多个备用的图片搜索服务
+    const imageSources = [
+      // 使用Pixabay API（需要key，但有限制）
+      async () => {
+        const pixabayKey = process.env.PIXABAY_API_KEY || 'placeholder';
+        const searchTerm = encodeURIComponent(keywords);
+        const url = `https://pixabay.com/api/?key=${pixabayKey}&q=${searchTerm}&image_type=photo&safesearch=true&per_page=3&order=popular`;
+        const resp = await fetch(url, { signal: AbortSignal.timeout(3000) });
+        const data = await resp.json();
+        if (data.hits && data.hits.length > 0) {
+          return data.hits[Math.floor(Math.random() * data.hits.length)].largeImageURL;
+        }
+        return null;
+      },
+      // 使用Unsplash Collections
+      async () => {
+        const unsplashKeywords = ['technology', 'ai', 'innovation', 'future', 'digital'].includes(category.toLowerCase())
+          ? category.toLowerCase()
+          : 'technology';
+        const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(unsplashKeywords)}&per_page=10&order_by=relevant`;
+        const resp = await fetch(url, {
+          headers: { 'Authorization': `Client-ID ${process.env.UNSPLASH_ACCESS_KEY || 'client_id'}` },
+          signal: AbortSignal.timeout(3000)
+        });
+        const data = await resp.json();
+        if (data.results && data.results.length > 0) {
+          return data.results[Math.floor(Math.random() * data.results.length)].urls.regular;
+        }
+        return null;
+      },
+      // Pexels（免费，无限制）
+      async () => {
+        const searchTerm = encodeURIComponent('technology innovation');
+        const url = `https://api.pexels.com/v1/search?query=${searchTerm}&per_page=15&orientation=landscape`;
+        const resp = await fetch(url, {
+          headers: { 'Authorization': process.env.PEXELS_API_KEY || 'placeholder' },
+          signal: AbortSignal.timeout(3000)
+        });
+        const data = await resp.json();
+        if (data.photos && data.photos.length > 0) {
+          return data.photos[Math.floor(Math.random() * data.photos.length)].src.large;
+        }
+        return null;
+      }
+    ];
+    
+    for (const source of imageSources) {
+      try {
+        const imageUrl = await source();
+        if (imageUrl && imageUrl.includes('http')) {
+          return { success: true, url: imageUrl, source: 'Photo Library' };
+        }
+      } catch (e) {
+        // 继续下一个源
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("❌ Real image generation failed:", error);
+    return null;
+  }
+}
+
+/**
+ * 使用 Unsplash 获取科技相关图片
+ */
+async function generateUnsplashImage(headline: string): Promise<{ success: boolean; url: string; source: string } | null> {
+  try {
+    const searchTerms = ['artificial intelligence', 'technology', 'digital innovation', 'future tech', 'software'];
+    const term = searchTerms[Math.floor(Math.random() * searchTerms.length)];
+    
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(term)}&per_page=20&order_by=relevant`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Client-ID ${process.env.UNSPLASH_ACCESS_KEY || 'demo'}`,
+        'User-Agent': 'Mozilla/5.0'
+      },
+      signal: AbortSignal.timeout(4000)
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        const randomPhoto = data.results[Math.floor(Math.random() * data.results.length)];
+        return {
+          success: true,
+          url: randomPhoto.urls.regular + '?w=1024&h=576&fit=crop',
+          source: 'Unsplash'
+        };
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("❌ Unsplash image generation failed:", error);
+    return null;
+  }
+}
+
+/**
+ * 生成占位符图片（文本+样式）
+ */
+async function generatePlaceholderImage(headline: string, category: string): Promise<{ success: boolean; url: string; source: string } | null> {
+  try {
+    // 使用placeholder服务生成带文本的图片
+    const title = headline.substring(0, 30).replace(/\s+/g, '+');
+    const urls = [
+      `https://via.placeholder.com/1024x576/4F46E5/FFFFFF?text=${title}`,
+      `https://picsum.photos/1024/576?random=${Date.now()}`,
+      `https://dummyimage.com/1024x576/4F46E5/FFFFFF.png?text=${title}`
+    ];
+    
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        if (response.ok) {
+          return { success: true, url, source: 'Placeholder' };
+        }
+      } catch (e) {
+        // 继续下一个
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("❌ Placeholder image generation failed:", error);
+    return null;
+  }
+}
+
+/**
+ * 生成渐变色的SVG占位图（最可靠的备用方案）
+ */
+function generateGradientPlaceholder(category: string): string {
+  const gradients: Record<string, string> = {
+    'AI': 'from-blue-700 to-blue-900',
+    'Tech': 'from-indigo-600 to-purple-900', 
+    'Semiconductors': 'from-amber-600 to-red-800',
+    'Energy': 'from-green-600 to-emerald-900',
+    'Science': 'from-cyan-600 to-blue-800',
+    'default': 'from-slate-700 to-slate-900'
+  };
+  
+  const gradient = gradients[category] || gradients['default'];
+  
+  // 生成SVG数据URL（可靠的备用图片）
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="576" viewBox="0 0 1024 576">
+    <defs>
+      <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#${gradient.split('-')[1]};stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#${gradient.split('-')[2]};stop-opacity:1" />
+      </linearGradient>
+    </defs>
+    <rect width="1024" height="576" fill="url(#grad)"/>
+    <text x="512" y="288" font-size="48" fill="white" text-anchor="middle" font-family="Arial, sans-serif" opacity="0.7">
+      📰 科技新闻
+    </text>
+  </svg>`;
+  
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+}
+
+/**
+ * 回退图片生成函数
+ */
+async function generateFallbackImage(headline: string, category: string, res: any) {
+  return res.status(200).json({
+    success: true,
+    imageUrl: generateGradientPlaceholder(category),
+    headline,
+    source: 'fallback-gradient',
+    note: 'Using fallback image due to API constraints'
+  });
 }
 
 /**

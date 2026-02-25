@@ -126,7 +126,8 @@ export const generateNewsImage = async (headline: string, summary?: string, cate
     console.log("🖼️ Requesting image for:", headline.substring(0, 50));
     const token = getAuthToken();
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout (increased from 10)
+    // 增加超时时间，给予多个图片源尝试的时间
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
     
     // 传递更多参数给后端，便于生成更好的图片
     const params = new URLSearchParams({
@@ -150,39 +151,81 @@ export const generateNewsImage = async (headline: string, summary?: string, cate
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.warn("Image API error:", response.status);
-      return null;
+      console.warn("⚠️ Image API error:", response.status);
+      // 返回备用图片而不是null
+      return generatePlaceholderUrl(category || 'Tech');
     }
 
     const data = await response.json();
-    if (!data.success) {
-      console.warn("Image generation failed:", data.error);
-      return null;
-    }
-
-    // ai-handler 返回 imageUrl
+    
+    // 新API支持success:false但仍返回备用图片
     if (data.imageUrl) {
-      console.log("✅ Image URL received from ai-handler");
+      console.log("✅ Image URL received:", data.source || 'unknown source');
       return data.imageUrl;
     }
 
     // 备用：处理 base64 响应
     if (data.data && data.mimeType) {
-      console.log("✅ Image received successfully");
+      console.log("✅ Image received as base64");
       return `data:${data.mimeType};base64,${data.data}`;
     }
 
-    return null;
+    // 如果没有imageUrl但成功，返回备用
+    if (data.success === true) {
+      console.log("⚠️ Response succeeded but no image data, using placeholder");
+      return generatePlaceholderUrl(category || 'Tech');
+    }
+
+    console.warn("Image generation failed:", data.error);
+    return generatePlaceholderUrl(category || 'Tech');
+    
   } catch (e: any) {
     if (e.name === 'AbortError') {
-      console.warn("Image generation timeout for:", headline);
+      console.warn("⏱️ Image generation timeout for:", headline);
     } else {
-      console.warn("Image gen failed for:", headline, e);
+      console.warn("❌ Image gen exception:", headline, e.message);
     }
-    return null;
+    // 返回备用图片而不是null
+    return generatePlaceholderUrl(category || 'Tech');
   }
 };
 
+/**
+ * 生成本地占位图URL - 科技相关的渐变色
+ */
+const generatePlaceholderUrl = (category: string): string => {
+  const colors: Record<string, [string, string]> = {
+    'AI': ['4F46E5', '3B82F6'],  // 蓝色系 - AI
+    'Tech': ['6366F1', '8B5CF6'],  // 紫蓝色 - 技术
+    'Semiconductors': ['F97316', 'EF4444'],  // 橙红色 - 芯片
+    'Energy': ['16A34A', '22C55E'],  // 绿色 - 能源
+    'Science': ['0891B2', '06B6D4'],  // 青色 - 科学
+    'default': ['475569', '64748B']  // 灰色 - 默认
+  };
+  
+  const [color1, color2] = colors[category] || colors['default'];
+  
+  // 生成SVG标记的base64占位图
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="576" viewBox="0 0 1024 576">
+    <defs>
+      <linearGradient id="grad-${category}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#${color1};stop-opacity:1"/>
+        <stop offset="100%" style="stop-color:#${color2};stop-opacity:1"/>
+      </linearGradient>
+    </defs>
+    <rect width="1024" height="576" fill="url(#grad-${category})"/>
+    <g opacity="0.3">
+      <circle cx="200" cy="150" r="80" fill="white"/>
+      <circle cx="800" cy="400" r="120" fill="white"/>
+      <path d="M 100 500 Q 300 300 500 400 T 900 350" stroke="white" stroke-width="3" fill="none"/>
+    </g>
+    <text x="512" y="250" font-size="64" font-weight="bold" fill="white" text-anchor="middle" font-family="Arial, sans-serif" opacity="0.9">🚀</text>
+    <text x="512" y="340" font-size="32" fill="white" text-anchor="middle" font-family="Arial, sans-serif" opacity="0.7">科技前沿</text>
+  </svg>`;
+  
+  const base64 = Buffer.from(svg).toString('base64');
+  return `data:image/svg+xml;base64,${base64}`;
+};
 // --- Audio Generation (TTS) ---
 
 export const generateNewsAudio = async (text: string, voice: 'Male' | 'Female'): Promise<ArrayBuffer | null> => {
