@@ -498,7 +498,7 @@ async function generateRealImage(headline: string, category: string): Promise<{ 
           headers: { 'Authorization': `Client-ID ${process.env.UNSPLASH_ACCESS_KEY || 'client_id'}` },
           signal: AbortSignal.timeout(3000)
         });
-        const data = await resp.json();
+        const data = (await resp.json()) as { results?: Array<{ urls: { regular: string } }> };
         if (data.results && data.results.length > 0) {
           return data.results[Math.floor(Math.random() * data.results.length)].urls.regular;
         }
@@ -512,7 +512,7 @@ async function generateRealImage(headline: string, category: string): Promise<{ 
           headers: { 'Authorization': process.env.PEXELS_API_KEY || 'placeholder' },
           signal: AbortSignal.timeout(3000)
         });
-        const data = await resp.json();
+        const data = (await resp.json()) as { photos?: Array<{ src: { large: string } }> };
         if (data.photos && data.photos.length > 0) {
           return data.photos[Math.floor(Math.random() * data.photos.length)].src.large;
         }
@@ -557,7 +557,7 @@ async function generateUnsplashImage(headline: string): Promise<{ success: boole
     });
     
     if (response.ok) {
-      const data = await response.json();
+      const data = (await response.json()) as { results?: Array<{ urls: { regular: string } }> };
       if (data.results && data.results.length > 0) {
         const randomPhoto = data.results[Math.floor(Math.random() * data.results.length)];
         return {
